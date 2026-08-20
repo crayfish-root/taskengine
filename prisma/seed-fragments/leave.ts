@@ -29,10 +29,15 @@ function pickN<T>(arr: T[], n: number): T[] {
   return shuffled.slice(0, Math.min(n, arr.length));
 }
 
-// Weighted toward the two most common leave types.
+// Weighted toward the two most common leave types (ANNUAL, SICK), with the
+// remaining LEAVE_TYPES appearing occasionally for variety.
 function randomLeaveType(): (typeof LEAVE_TYPES)[number] {
-  const weighted = [...Array(5).fill("ANNUAL"), ...Array(3).fill("SICK"), "PUBLIC_HOLIDAY", "UNPAID", "OTHER"] as const;
-  return pick([...weighted]) as (typeof LEAVE_TYPES)[number];
+  const weighted: (typeof LEAVE_TYPES)[number][] = [
+    ...Array(5).fill("ANNUAL"),
+    ...Array(3).fill("SICK"),
+    ...LEAVE_TYPES.filter((t) => t !== "ANNUAL" && t !== "SICK"),
+  ];
+  return pick(weighted);
 }
 
 interface Spec {

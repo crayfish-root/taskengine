@@ -44,7 +44,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(d.description !== undefined && { description: d.description }),
       ...(d.status !== undefined && {
         status: d.status as never,
-        completedAt: d.status === "COMPLETED" ? new Date() : d.status !== "COMPLETED" ? null : undefined,
+        completedAt: (d.status as string) === "COMPLETED" ? new Date() : null,
       }),
       ...(d.priority !== undefined && { priority: d.priority as never }),
       ...(d.departmentId !== undefined && { departmentId: d.departmentId }),

@@ -70,6 +70,15 @@ export const KPI_FREQUENCY: Record<string, { label: string }> = {
   QUARTERLY: { label: "Quarterly" },
 };
 
+export const ORG_LEVEL: Record<string, { label: string; tone: "neutral" | "accent" | "success" | "warning" | "danger" | "info" }> = {
+  CIO: { label: "CIO", tone: "accent" },
+  DIRECTOR: { label: "Director", tone: "info" },
+  HEAD_OF_DEPARTMENT: { label: "Head of Department", tone: "warning" },
+  MANAGER: { label: "Manager", tone: "success" },
+  LEAD: { label: "Lead", tone: "neutral" },
+  STAFF: { label: "Staff", tone: "neutral" },
+};
+
 export const NOTIFICATION_TYPE: Record<string, { label: string }> = {
   ASSIGNMENT: { label: "Assignment" },
   DELEGATION: { label: "Delegation" },

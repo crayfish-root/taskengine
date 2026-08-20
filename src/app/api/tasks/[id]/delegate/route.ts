@@ -26,7 +26,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const [task, target] = await Promise.all([
     prisma.task.findUnique({ where: { id }, include: { assignments: true } }),
-    prisma.user.findUnique({ where: { id: toUserId }, select: { id: true, name: true, active: true } }),
+    prisma.user.findUnique({
+      where: { id: toUserId },
+      select: { id: true, name: true, active: true, avatarColor: true, avatarEmoji: true, level: true, title: true },
+    }),
   ]);
   if (!task) return NextResponse.json({ error: "Task not found" }, { status: 404 });
   if (!target || !target.active) return NextResponse.json({ error: "Target user not found" }, { status: 404 });
@@ -65,6 +68,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         taskId: id,
         authorId: user.id,
         body: `Delegated this task to ${target.name}.${note ? ` Note: ${note}` : ""}`,
+      },
+    });
+
+    await tx.activityLog.create({
+      data: {
+        userId: user.id,
+        action: "DELEGATE",
+        entityType: "Task",
+        entityId: id,
+        meta: JSON.stringify({
+          toUserId,
+          toName: target.name,
+          toAvatarColor: target.avatarColor,
+          toAvatarEmoji: target.avatarEmoji,
+          toLevel: target.level,
+          toTitle: target.title,
+          note: note ?? null,
+        }),
       },
     });
 

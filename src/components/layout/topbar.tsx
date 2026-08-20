@@ -1,4 +1,3 @@
-import { Avatar } from "@/components/ui/avatar";
 import { levelLabel } from "@/lib/utils";
 import { Bell } from "lucide-react";
 import Link from "next/link";

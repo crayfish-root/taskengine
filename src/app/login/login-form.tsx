@@ -32,7 +32,7 @@ export function LoginForm() {
     router.refresh();
   }
 
-  function useDemo(demoEmail: string) {
+  function fillDemoAccount(demoEmail: string) {
     setEmail(demoEmail);
     setPassword("password123");
   }
@@ -66,7 +66,7 @@ export function LoginForm() {
             <button
               type="button"
               key={mail}
-              onClick={() => useDemo(mail)}
+              onClick={() => fillDemoAccount(mail)}
               className="rounded-[8px] border border-border px-2.5 py-1.5 text-left text-[12px] text-muted hover:border-accent hover:text-accent transition-colors"
             >
               {label}

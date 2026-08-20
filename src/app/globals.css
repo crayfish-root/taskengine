@@ -1,0 +1,134 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f5f5f7;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --foreground: #1d1d1f;
+  --muted: #6e6e73;
+  --muted-2: #86868b;
+  --border: #e5e5e7;
+  --border-soft: #ececed;
+  --accent: #3b63f6;
+  --accent-hover: #2d51e0;
+  --accent-soft: #eef1fe;
+  --ring: rgba(59, 99, 246, 0.35);
+
+  --success: #1fa463;
+  --success-soft: #e7f7ee;
+  --warning: #c98a06;
+  --warning-soft: #fdf3de;
+  --danger: #d63b3b;
+  --danger-soft: #fbe9e9;
+  --info: #3b63f6;
+  --info-soft: #eef1fe;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.12);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-2: var(--muted-2);
+  --color-border: var(--border);
+  --color-border-soft: var(--border-soft);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  --font-sans: var(--font-sans);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #000000;
+    --surface: #1c1c1e;
+    --surface-raised: #242426;
+    --foreground: #f5f5f7;
+    --muted: #a1a1a6;
+    --muted-2: #8e8e93;
+    --border: #2c2c2e;
+    --border-soft: #262628;
+    --accent: #5c85ff;
+    --accent-hover: #7a9bff;
+    --accent-soft: #182140;
+    --ring: rgba(92, 133, 255, 0.4);
+
+    --success: #34c77b;
+    --success-soft: #10281c;
+    --warning: #e3a836;
+    --warning-soft: #2c2210;
+    --danger: #ef5c5c;
+    --danger-soft: #2c1414;
+    --info: #5c85ff;
+    --info-soft: #182140;
+
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.55);
+  }
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--ring);
+}
+
+/* Thin, unobtrusive scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fade-in 0.25s ease-out;
+}

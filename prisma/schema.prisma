@@ -1,0 +1,539 @@
+// TaskEngine — enterprise task & project management platform
+// Single source of truth data model shared across all app modules.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Organization / People
+// ---------------------------------------------------------------------------
+
+enum OrgLevel {
+  CIO
+  DIRECTOR
+  HEAD_OF_DEPARTMENT
+  MANAGER
+  LEAD
+  STAFF
+}
+
+model Department {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  color       String   @default("#6366f1")
+  createdAt   DateTime @default(now())
+
+  users    User[]
+  teams    Team[]
+  projects Project[]
+  kpis     Kpi[]
+}
+
+model Team {
+  id           String   @id @default(cuid())
+  name         String
+  description  String?
+  color        String   @default("#0ea5e9")
+  createdAt    DateTime @default(now())
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  leadId       String?
+  lead         User?    @relation("TeamLead", fields: [leadId], references: [id])
+
+  members       TeamMembership[]
+  projectTeams  ProjectTeam[]
+}
+
+model TeamMembership {
+  id     String @id @default(cuid())
+  teamId String
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  passwordHash  String
+  title         String?
+  avatarColor   String   @default("#6366f1")
+  avatarEmoji   String?
+  level         OrgLevel @default(STAFF)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  departmentId  String?
+  department    Department? @relation(fields: [departmentId], references: [id])
+
+  managerId     String?
+  manager       User?    @relation("ReportsTo", fields: [managerId], references: [id])
+  directReports User[]   @relation("ReportsTo")
+
+  teamsLed        Team[]           @relation("TeamLead")
+  teamMemberships TeamMembership[]
+
+  ownedProjects   Project[]        @relation("ProjectOwner")
+  projectMembers  ProjectMember[]
+
+  tasksCreated    Task[]           @relation("TaskCreatedBy")
+  tasksDelegatedBy Task[]          @relation("TaskDelegatedBy")
+  assignments     TaskAssignment[]
+
+  comments        Comment[]
+  documents       Document[]
+  blockersRaised  Blocker[]        @relation("BlockerRaisedBy")
+  blockersOwned   Blocker[]        @relation("BlockerOwner")
+
+  kpiRecords      KpiRecord[]      @relation("KpiSubject")
+  kpiUpdatedBy    KpiRecord[]      @relation("KpiUpdatedBy")
+  kpisOwned       Kpi[]            @relation("KpiOwner")
+
+  leaveRequests   LeaveRequest[]   @relation("LeaveOwner")
+  leaveApprovals  LeaveRequest[]   @relation("LeaveApprover")
+
+  updateRequestsMade  ScheduledUpdateRequest[] @relation("RequestMadeBy")
+  updateRequestsOf    ScheduledUpdateRequest[] @relation("RequestOf")
+  updateResponses     UpdateResponse[]
+
+  notifications   Notification[]
+  activityLogs    ActivityLog[]
+  statusHistory   TaskStatusEvent[]
+}
+
+// ---------------------------------------------------------------------------
+// Projects
+// ---------------------------------------------------------------------------
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  AT_RISK
+  DELAYED
+  COMPLETED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model Project {
+  id           String        @id @default(cuid())
+  name         String
+  code         String        @unique
+  description  String?
+  status       ProjectStatus @default(PLANNING)
+  priority     Priority      @default(MEDIUM)
+  startDate    DateTime?
+  targetDate   DateTime?
+  completedAt  DateTime?
+  budget       Float?
+  color        String        @default("#6366f1")
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  departmentId String?
+  department   Department?   @relation(fields: [departmentId], references: [id])
+
+  ownerId      String
+  owner        User          @relation("ProjectOwner", fields: [ownerId], references: [id])
+
+  workflowId   String?
+  workflow     Workflow?     @relation(fields: [workflowId], references: [id])
+
+  members      ProjectMember[]
+  teams        ProjectTeam[]
+  tasks        Task[]
+  documents    Document[]
+  comments     Comment[]
+  blockers     Blocker[]
+  kpis         Kpi[]
+  updateRequests ScheduledUpdateRequest[] @relation("RequestOnProject")
+}
+
+model ProjectMember {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      String   @default("Contributor")
+
+  @@unique([projectId, userId])
+}
+
+model ProjectTeam {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  teamId    String
+  team      Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, teamId])
+}
+
+// ---------------------------------------------------------------------------
+// Workflows (configurable status pipelines)
+// ---------------------------------------------------------------------------
+
+model Workflow {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  statuses WorkflowStatus[]
+  projects Project[]
+}
+
+model WorkflowStatus {
+  id         String   @id @default(cuid())
+  workflowId String
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  key        String
+  label      String
+  color      String   @default("#6b7280")
+  order      Int      @default(0)
+  isTerminal Boolean  @default(false)
+  isDelayFlag Boolean @default(false)
+
+  @@unique([workflowId, key])
+}
+
+// ---------------------------------------------------------------------------
+// Tasks
+// ---------------------------------------------------------------------------
+
+enum TaskStatus {
+  BACKLOG
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  IN_REVIEW
+  DONE
+  CANCELLED
+}
+
+model Task {
+  id            String     @id @default(cuid())
+  title         String
+  description   String?
+  status        TaskStatus @default(TODO)
+  priority      Priority   @default(MEDIUM)
+  startDate     DateTime?
+  dueDate       DateTime?
+  completedAt   DateTime?
+  estimatedHours Float?
+  actualHours   Float?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  projectId     String?
+  project       Project?   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  parentTaskId  String?
+  parentTask    Task?      @relation("Subtasks", fields: [parentTaskId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  subtasks      Task[]     @relation("Subtasks")
+
+  createdById   String
+  createdBy     User       @relation("TaskCreatedBy", fields: [createdById], references: [id])
+
+  delegatedById String?
+  delegatedBy   User?      @relation("TaskDelegatedBy", fields: [delegatedById], references: [id])
+  delegationDepth Int      @default(0)
+
+  assignments   TaskAssignment[]
+  comments      Comment[]
+  documents     Document[]
+  blockers      Blocker[]
+  statusHistory TaskStatusEvent[]
+  updateRequests ScheduledUpdateRequest[] @relation("RequestOnTask")
+
+  @@index([projectId])
+  @@index([parentTaskId])
+}
+
+model TaskAssignment {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isPrimary Boolean  @default(false)
+  assignedAt DateTime @default(now())
+  reassignedFromId String?
+  autoAssigned  Boolean @default(false)
+
+  @@unique([taskId, userId])
+}
+
+model TaskStatusEvent {
+  id        String     @id @default(cuid())
+  taskId    String
+  task      Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fromStatus TaskStatus?
+  toStatus  TaskStatus
+  note      String?
+  createdAt DateTime   @default(now())
+  byId      String
+  by        User       @relation(fields: [byId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// Blockers / delays
+// ---------------------------------------------------------------------------
+
+enum BlockerStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+enum BlockerSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model Blocker {
+  id          String          @id @default(cuid())
+  title       String
+  description String?
+  severity    BlockerSeverity @default(MEDIUM)
+  status      BlockerStatus   @default(OPEN)
+  createdAt   DateTime        @default(now())
+  resolvedAt  DateTime?
+
+  taskId      String?
+  task        Task?           @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  projectId   String?
+  project     Project?        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  raisedById  String
+  raisedBy    User            @relation("BlockerRaisedBy", fields: [raisedById], references: [id])
+  ownerId     String?
+  owner       User?           @relation("BlockerOwner", fields: [ownerId], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// KPIs
+// ---------------------------------------------------------------------------
+
+enum KpiFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+}
+
+enum KpiDirection {
+  HIGHER_IS_BETTER
+  LOWER_IS_BETTER
+}
+
+model Kpi {
+  id           String       @id @default(cuid())
+  name         String
+  description  String?
+  unit         String       @default("")
+  target       Float
+  direction    KpiDirection @default(HIGHER_IS_BETTER)
+  frequency    KpiFrequency @default(MONTHLY)
+  createdAt    DateTime     @default(now())
+
+  departmentId String?
+  department   Department?  @relation(fields: [departmentId], references: [id])
+  projectId    String?
+  project      Project?     @relation(fields: [projectId], references: [id])
+  ownerId      String
+  owner        User         @relation("KpiOwner", fields: [ownerId], references: [id])
+
+  records      KpiRecord[]
+}
+
+model KpiRecord {
+  id          String   @id @default(cuid())
+  kpiId       String
+  kpi         Kpi      @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+  value       Float
+  periodStart DateTime
+  periodEnd   DateTime
+  note        String?
+  createdAt   DateTime @default(now())
+
+  subjectId   String?
+  subject     User?    @relation("KpiSubject", fields: [subjectId], references: [id])
+  updatedById String
+  updatedBy   User     @relation("KpiUpdatedBy", fields: [updatedById], references: [id])
+}
+
+// ---------------------------------------------------------------------------
+// Leave
+// ---------------------------------------------------------------------------
+
+enum LeaveType {
+  ANNUAL
+  SICK
+  PUBLIC_HOLIDAY
+  UNPAID
+  OTHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeaveRequest {
+  id         String      @id @default(cuid())
+  userId     String
+  user       User        @relation("LeaveOwner", fields: [userId], references: [id])
+  type       LeaveType   @default(ANNUAL)
+  startDate  DateTime
+  endDate    DateTime
+  halfDay    Boolean     @default(false)
+  status     LeaveStatus @default(PENDING)
+  reason     String?
+  createdAt  DateTime    @default(now())
+
+  approverId String?
+  approver   User?       @relation("LeaveApprover", fields: [approverId], references: [id])
+
+  backupUserIds String? // JSON array of userIds designated as backup coverage
+}
+
+// ---------------------------------------------------------------------------
+// Scheduled update requests
+// ---------------------------------------------------------------------------
+
+enum UpdateFrequency {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
+model ScheduledUpdateRequest {
+  id          String          @id @default(cuid())
+  title       String
+  question    String          @default("What is the current status?")
+  frequency   UpdateFrequency @default(WEEKLY)
+  active      Boolean         @default(true)
+  nextDueAt   DateTime
+  createdAt   DateTime        @default(now())
+
+  requestedById String
+  requestedBy   User          @relation("RequestMadeBy", fields: [requestedById], references: [id])
+  requestedOfId String
+  requestedOf   User          @relation("RequestOf", fields: [requestedOfId], references: [id])
+
+  projectId   String?
+  project     Project?        @relation("RequestOnProject", fields: [projectId], references: [id])
+  taskId      String?
+  task        Task?           @relation("RequestOnTask", fields: [taskId], references: [id])
+
+  responses   UpdateResponse[]
+}
+
+model UpdateResponse {
+  id          String                 @id @default(cuid())
+  requestId   String
+  request     ScheduledUpdateRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  responderId String
+  responder   User                   @relation(fields: [responderId], references: [id])
+  message     String
+  statusSnapshot String?
+  createdAt   DateTime               @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Comments / Documents / Notifications / Activity
+// ---------------------------------------------------------------------------
+
+model Comment {
+  id        String   @id @default(cuid())
+  body      String
+  createdAt DateTime @default(now())
+
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+
+  taskId    String?
+  task      Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+model Document {
+  id         String   @id @default(cuid())
+  name       String
+  mimeType   String
+  size       Int
+  dataUrl    String   // base64 data URL — self-contained blob storage
+  createdAt  DateTime @default(now())
+
+  uploadedById String
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+
+  taskId     String?
+  task       Task?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  projectId  String?
+  project    Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+enum NotificationType {
+  ASSIGNMENT
+  DELEGATION
+  STATUS_CHANGE
+  MENTION
+  BLOCKER
+  UPDATE_REQUEST
+  LEAVE
+  KPI
+  DEADLINE
+  SYSTEM
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType @default(SYSTEM)
+  title     String
+  body      String?
+  link      String?
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  action    String
+  entityType String
+  entityId  String
+  meta      String?
+  createdAt DateTime @default(now())
+
+  @@index([entityType, entityId])
+}

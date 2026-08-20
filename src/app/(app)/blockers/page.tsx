@@ -96,7 +96,7 @@ export default async function BlockersPage({
         eyebrow="Work"
         title="Blockers & Delays"
         description="Everything currently at risk across the organization — reported blockers and items simply running late."
-        actions={<AddBlockerButton taskOptions={undefined} ownerOptions={people} projectId={undefined} />}
+        actions={<AddBlockerButton ownerOptions={people} projectOptions={projects} />}
       />
 
       <div className="mb-6 grid grid-cols-3 gap-4">

@@ -99,6 +99,18 @@ export function AddBlockerModal({
             </FieldGroup>
           )}
         </div>
+        {projectOptions && projectOptions.length > 0 && !projectId && !taskId && (
+          <FieldGroup>
+            <Label>Project</Label>
+            <Select value={linkedProjectId} onChange={(e) => setLinkedProjectId(e.target.value)}>
+              {projectOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.code} · {p.name}
+                </option>
+              ))}
+            </Select>
+          </FieldGroup>
+        )}
         {taskOptions && taskOptions.length > 0 && !taskId && (
           <FieldGroup>
             <Label>Linked task (optional)</Label>
@@ -117,7 +129,11 @@ export function AddBlockerModal({
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" disabled={!title.trim() || saving} onClick={submit}>
+          <Button
+            variant="primary"
+            disabled={!title.trim() || saving || (!projectId && !taskId && !linkedTaskId && !linkedProjectId)}
+            onClick={submit}
+          >
             {saving ? "Logging…" : "Log blocker"}
           </Button>
         </div>

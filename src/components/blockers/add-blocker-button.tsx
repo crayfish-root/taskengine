@@ -10,11 +10,13 @@ export function AddBlockerButton({
   taskId,
   taskOptions,
   ownerOptions,
+  projectOptions,
 }: {
   projectId?: string | null;
   taskId?: string | null;
   taskOptions?: { id: string; title: string }[];
   ownerOptions?: { id: string; name: string }[];
+  projectOptions?: { id: string; name: string; code: string }[];
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -29,6 +31,7 @@ export function AddBlockerButton({
         taskId={taskId}
         taskOptions={taskOptions}
         ownerOptions={ownerOptions}
+        projectOptions={projectOptions}
       />
     </>
   );

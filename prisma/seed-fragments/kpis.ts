@@ -109,7 +109,7 @@ const KPI_TEMPLATES: KpiTemplate[] = [
   { name: "Task Completion Rate", description: "Tasks closed on or before due date.", unit: "%", target: 90, direction: "HIGHER_IS_BETTER", frequency: "WEEKLY", scope: "project", trend: "improving", startValue: 71 },
   { name: "Training Hours per Employee", description: "L&D hours completed per headcount.", unit: "hrs", target: 20, direction: "HIGHER_IS_BETTER", frequency: "QUARTERLY", deptKeywords: ["hr", "people", "operations"], scope: "department", trend: "improving", startValue: 11 },
   { name: "Server Response Time", description: "P95 API response latency.", unit: "ms", target: 200, direction: "LOWER_IS_BETTER", frequency: "DAILY", deptKeywords: ["engineer", "tech", "it "], scope: "department", trend: "improving", startValue: 340 },
-  { name: "Marketing Qualified Leads", description: "MQLs generated per month.", unit: "leads", target: 150, direction: "HIGHER_IS_BETTER", frequency: "MONTHLY", deptKeywords: ["marketing"], scope: "department", trend: "volatile", startValue: 95 },
+  { name: "Marketing Qualified Leads", description: "MQLs generated per month.", unit: "leads", target: 150, direction: "HIGHER_IS_BETTER", frequency: "MONTHLY", deptKeywords: ["marketing", "sales"], scope: "department", trend: "volatile", startValue: 95 },
   { name: "Revenue Growth", description: "YoY revenue growth.", unit: "%", target: 15, direction: "HIGHER_IS_BETTER", frequency: "QUARTERLY", scope: "org", trend: "declining", startValue: 12 },
 ];
 

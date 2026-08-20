@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Avatar } from "@/components/ui/avatar";
 import { TabLinks } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
 import { TaskBoardView } from "@/components/tasks/task-board-view";
 import { EditProjectModal } from "@/components/projects/edit-project-modal";
 import { ProjectTeamPanel } from "@/components/projects/project-team-panel";

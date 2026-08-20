@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { AvatarStack } from "@/components/ui/avatar";
 import { QuickStatus } from "./quick-status";
 import { AddTaskModal } from "./add-task-modal";

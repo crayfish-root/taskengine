@@ -67,6 +67,7 @@ export default async function BlockersPage({
     prisma.user.findMany({ where: { active: true }, select: LITE_USER_SELECT, orderBy: { name: "asc" } }),
   ]);
 
+  // eslint-disable-next-line react-hooks/purity -- server component, computed once per request
   const now = Date.now();
   const overdueTasks: OverdueTaskData[] = overdueTasksRaw.map((t) => ({
     kind: "task",

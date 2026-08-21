@@ -26,8 +26,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Uses core.setSecret() rather than `run: echo "::add-mask::${{ inputs.x }}"` —
+      # the latter interpolates the raw value into the logged command text itself
+      # (the "Run echo ..." line) before masking ever takes effect, leaking it
+      # regardless of the mask. actions/github-script's `script:` never contains
+      # the raw value as literal text, so nothing gets echoed.
       - name: Mask token
-        run: echo "::add-mask::${{ inputs.hetzner_token }}"
+        uses: actions/github-script@v7
+        env:
+          HETZNER_TOKEN: ${{ inputs.hetzner_token }}
+        with:
+          script: core.setSecret(process.env.HETZNER_TOKEN)
 
       - name: Generate deploy keypair
         run: ssh-keygen -t ed25519 -N "" -f deploy_key -q

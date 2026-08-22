@@ -12,7 +12,7 @@ export interface WorkflowCardData {
   _count: { projects: number };
 }
 
-export function WorkflowCard({ workflow }: { workflow: WorkflowCardData }) {
+export function WorkflowCard({ workflow, canManage }: { workflow: WorkflowCardData; canManage: boolean }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
@@ -28,16 +28,18 @@ export function WorkflowCard({ workflow }: { workflow: WorkflowCardData }) {
           </div>
           {workflow.description && <p className="mt-0.5 text-[13px] text-muted">{workflow.description}</p>}
         </div>
-        <WorkflowActions
-          workflow={{
-            id: workflow.id,
-            name: workflow.name,
-            description: workflow.description ?? "",
-            isDefault: workflow.isDefault,
-            statuses: workflow.statuses,
-          }}
-          projectCount={workflow._count.projects}
-        />
+        {canManage && (
+          <WorkflowActions
+            workflow={{
+              id: workflow.id,
+              name: workflow.name,
+              description: workflow.description ?? "",
+              isDefault: workflow.isDefault,
+              statuses: workflow.statuses,
+            }}
+            projectCount={workflow._count.projects}
+          />
+        )}
       </CardHeader>
       <CardContent>
         <WorkflowStepper statuses={workflow.statuses} />

@@ -36,6 +36,7 @@ function KpiForm({
   departments,
   projects,
   users,
+  canPickAnyOwner,
   onSaved,
   onCancel,
 }: {
@@ -43,6 +44,7 @@ function KpiForm({
   departments: { id: string; name: string }[];
   projects: { id: string; name: string; code: string }[];
   users: { id: string; name: string }[];
+  canPickAnyOwner: boolean;
   onSaved: () => void;
   onCancel: () => void;
 }) {
@@ -147,16 +149,22 @@ function KpiForm({
       </div>
       <FieldGroup>
         <Label htmlFor="ownerId">Owner</Label>
-        <Select id="ownerId" required value={form.ownerId} onChange={(e) => set("ownerId", e.target.value)}>
-          <option value="" disabled>
-            Select an owner
-          </option>
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name}
+        {canPickAnyOwner ? (
+          <Select id="ownerId" required value={form.ownerId} onChange={(e) => set("ownerId", e.target.value)}>
+            <option value="" disabled>
+              Select an owner
             </option>
-          ))}
-        </Select>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </Select>
+        ) : (
+          <div className="flex h-9 items-center rounded-[10px] border border-border-soft bg-black/[0.02] dark:bg-white/[0.03] px-3 text-[13px] text-foreground">
+            {users.find((u) => u.id === form.ownerId)?.name ?? "You"}
+          </div>
+        )}
       </FieldGroup>
       {error && <p className="text-[12.5px] text-danger">{error}</p>}
       <div className="flex justify-end gap-2 pt-1">
@@ -176,11 +184,13 @@ export function NewKpiButton({
   projects,
   users,
   currentUserId,
+  canPickAnyOwner,
 }: {
   departments: { id: string; name: string }[];
   projects: { id: string; name: string; code: string }[];
   users: { id: string; name: string }[];
   currentUserId: string;
+  canPickAnyOwner: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const router = useRouter();
@@ -196,6 +206,7 @@ export function NewKpiButton({
           departments={departments}
           projects={projects}
           users={users}
+          canPickAnyOwner={canPickAnyOwner}
           onCancel={() => setOpen(false)}
           onSaved={() => {
             setOpen(false);
@@ -234,6 +245,7 @@ export function EditKpiButton({
           departments={departments}
           projects={projects}
           users={users}
+          canPickAnyOwner
           onCancel={() => setOpen(false)}
           onSaved={() => {
             setOpen(false);

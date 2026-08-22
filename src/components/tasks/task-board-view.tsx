@@ -15,10 +15,12 @@ export function TaskBoardView({
   tasks,
   projectId,
   people,
+  canAddTask,
 }: {
   tasks: TaskCardData[];
   projectId: string;
   people: PickablePerson[];
+  canAddTask: boolean;
 }) {
   const [view, setView] = useState<"board" | "list">("board");
   const [addOpen, setAddOpen] = useState(false);
@@ -43,9 +45,11 @@ export function TaskBoardView({
             <ListIcon className="h-3.5 w-3.5" /> List
           </button>
         </div>
-        <Button size="sm" variant="primary" onClick={() => setAddOpen(true)}>
-          <Plus className="h-3.5 w-3.5" /> Add task
-        </Button>
+        {canAddTask && (
+          <Button size="sm" variant="primary" onClick={() => setAddOpen(true)}>
+            <Plus className="h-3.5 w-3.5" /> Add task
+          </Button>
+        )}
       </div>
 
       {view === "board" ? (
@@ -94,7 +98,9 @@ export function TaskBoardView({
         </div>
       )}
 
-      <AddTaskModal open={addOpen} onClose={() => setAddOpen(false)} projectId={projectId} people={people} />
+      {canAddTask && (
+        <AddTaskModal open={addOpen} onClose={() => setAddOpen(false)} projectId={projectId} people={people} />
+      )}
     </div>
   );
 }

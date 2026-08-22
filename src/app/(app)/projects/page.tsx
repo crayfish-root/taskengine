@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth";
+import { ELEVATED_LEVELS } from "@/lib/org";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ProjectCard } from "@/components/projects/project-card";
@@ -13,6 +15,8 @@ export default async function ProjectsPage({
   searchParams: Promise<{ status?: string; priority?: string; department?: string; owner?: string }>;
 }) {
   const sp = await searchParams;
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return null;
 
   const where: Record<string, unknown> = {};
   if (sp.status) where.status = sp.status;
@@ -42,7 +46,15 @@ export default async function ProjectsPage({
         eyebrow="Work"
         title="Projects"
         description="Every initiative across the organization, with live progress and delivery risk."
-        actions={<NewProjectButton people={users} departments={departments} teams={teams} />}
+        actions={
+          <NewProjectButton
+            people={users}
+            departments={departments}
+            teams={teams}
+            currentUser={{ id: currentUser.id, name: currentUser.name }}
+            canPickAnyOwner={ELEVATED_LEVELS.has(currentUser.level)}
+          />
+        }
       />
 
       <div className="mb-6">

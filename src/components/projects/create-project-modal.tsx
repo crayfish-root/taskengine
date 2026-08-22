@@ -25,12 +25,16 @@ export function CreateProjectModal({
   people,
   departments,
   teams,
+  currentUser,
+  canPickAnyOwner,
 }: {
   open: boolean;
   onClose: () => void;
   people: PickablePerson[];
   departments: { id: string; name: string }[];
   teams: { id: string; name: string; departmentId: string | null }[];
+  currentUser: { id: string; name: string };
+  canPickAnyOwner: boolean;
 }) {
   const router = useRouter();
   const [name, setName] = useState("");
@@ -40,7 +44,7 @@ export function CreateProjectModal({
   const [status, setStatus] = useState("PLANNING");
   const [priority, setPriority] = useState("MEDIUM");
   const [departmentId, setDepartmentId] = useState("");
-  const [ownerId, setOwnerId] = useState<string | null>(null);
+  const [ownerId, setOwnerId] = useState<string | null>(currentUser.id);
   const [startDate, setStartDate] = useState("");
   const [targetDate, setTargetDate] = useState("");
   const [memberIds, setMemberIds] = useState<string[]>([]);
@@ -56,7 +60,7 @@ export function CreateProjectModal({
     setStatus("PLANNING");
     setPriority("MEDIUM");
     setDepartmentId("");
-    setOwnerId(null);
+    setOwnerId(currentUser.id);
     setStartDate("");
     setTargetDate("");
     setMemberIds([]);
@@ -177,13 +181,19 @@ export function CreateProjectModal({
         </div>
         <FieldGroup>
           <Label>Owner</Label>
-          <PeoplePicker
-            people={people}
-            selected={ownerId ? [ownerId] : []}
-            onToggle={(id) => setOwnerId(id === ownerId ? null : id)}
-            multi={false}
-            placeholder="Search for an owner…"
-          />
+          {canPickAnyOwner ? (
+            <PeoplePicker
+              people={people}
+              selected={ownerId ? [ownerId] : []}
+              onToggle={(id) => setOwnerId(id === ownerId ? null : id)}
+              multi={false}
+              placeholder="Search for an owner…"
+            />
+          ) : (
+            <div className="flex h-9 items-center rounded-[10px] border border-border-soft bg-black/[0.02] dark:bg-white/[0.03] px-3 text-[13px] text-foreground">
+              {currentUser.name} (you)
+            </div>
+          )}
         </FieldGroup>
         <FieldGroup>
           <Label>Additional members ({memberIds.length})</Label>

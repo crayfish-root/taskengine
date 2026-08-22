@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { advanceDueDate } from "@/app/(app)/updates/_lib/frequency";
-import { isInManagementChain, ELEVATED_LEVELS } from "@/lib/org";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -55,14 +54,9 @@ export async function POST(req: NextRequest) {
   }
   const data = parsed.data;
 
-  const allowed =
-    ELEVATED_LEVELS.has(user.level) ||
-    user.id === data.requestedOfId ||
-    (await isInManagementChain(user.id, data.requestedOfId));
-  if (!allowed) {
-    return NextResponse.json({ error: "You can only request updates from your own reports" }, { status: 403 });
-  }
-
+  // Deliberately open: the "who to ask" picker lists every colleague (reports sorted
+  // first as a convenience, not a restriction) — peer-to-peer and upward requests are
+  // an intended use case, not just top-down management.
   const request = await prisma.scheduledUpdateRequest.create({
     data: {
       title: data.title,

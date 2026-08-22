@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth";
+import { ELEVATED_LEVELS } from "@/lib/org";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,7 +37,8 @@ export default async function ProjectDetailPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ tab?: string }>;
 }) {
-  const [{ id }, sp] = await Promise.all([params, searchParams]);
+  const [{ id }, sp, currentUser] = await Promise.all([params, searchParams, getCurrentUser()]);
+  if (!currentUser) return null;
   const tab = TABS.some((t) => t.key === sp.tab) ? sp.tab! : "tasks";
 
   const project = await prisma.project.findUnique({
@@ -63,6 +66,11 @@ export default async function ProjectDetailPage({
   });
 
   if (!project) notFound();
+
+  const canManageTasks =
+    ELEVATED_LEVELS.has(currentUser.level) ||
+    project.ownerId === currentUser.id ||
+    project.members.some((m) => m.userId === currentUser.id);
 
   const [people, allTeams, departments] = await Promise.all([
     prisma.user.findMany({ where: { active: true }, select: LITE_USER_SELECT, orderBy: { name: "asc" } }),
@@ -224,7 +232,7 @@ export default async function ProjectDetailPage({
         <TabLinks tabs={TABS.map((t) => ({ label: t.label, key: t.key, href: `/projects/${id}?tab=${t.key}` }))} active={tab} />
       </div>
 
-      {tab === "tasks" && <TaskBoardView tasks={topLevelTasks} projectId={project.id} people={people} />}
+      {tab === "tasks" && <TaskBoardView tasks={topLevelTasks} projectId={project.id} people={people} canAddTask={canManageTasks} />}
 
       {tab === "blockers" && (
         <div>

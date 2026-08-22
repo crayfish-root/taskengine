@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { ELEVATED_LEVELS } from "@/lib/org";
+import { canManageProject } from "@/lib/project-permissions";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -64,6 +66,8 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
 
   const overdue = isTaskOverdue(task.dueDate, task.status);
   const canManage = true; // any authenticated user can act; server routes still enforce canActOnTask
+  const canAddSubtask =
+    !task.projectId || ELEVATED_LEVELS.has(user.level) || (await canManageProject(user.id, task.projectId));
 
   const hops: DelegationHop[] = delegationLogs.map((log) => {
     const meta = log.meta ? JSON.parse(log.meta) : {};
@@ -139,7 +143,13 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
               <CardTitle>Subtasks ({task.subtasks.length})</CardTitle>
             </CardHeader>
             <CardContent className="pt-3">
-              <SubtasksSection parentTaskId={task.id} projectId={task.projectId} subtasks={task.subtasks} people={people} />
+              <SubtasksSection
+                parentTaskId={task.id}
+                projectId={task.projectId}
+                subtasks={task.subtasks}
+                people={people}
+                canAddSubtask={canAddSubtask}
+              />
             </CardContent>
           </Card>
 

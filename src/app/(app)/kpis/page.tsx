@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { ELEVATED_LEVELS } from "@/lib/org";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Target } from "lucide-react";
@@ -45,7 +46,15 @@ export default async function KpisPage({
         eyebrow="Tracking"
         title="KPIs"
         description="Organization-wide performance indicators, tracked against target."
-        actions={<NewKpiButton departments={departments} projects={projects} users={users} currentUserId={user!.id} />}
+        actions={
+          <NewKpiButton
+            departments={departments}
+            projects={projects}
+            users={users}
+            currentUserId={user!.id}
+            canPickAnyOwner={ELEVATED_LEVELS.has(user!.level)}
+          />
+        }
       />
 
       <KpiFilters departments={departments} projects={projects} users={users} />

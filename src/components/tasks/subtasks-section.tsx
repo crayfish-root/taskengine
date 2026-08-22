@@ -24,11 +24,13 @@ export function SubtasksSection({
   projectId,
   subtasks,
   people,
+  canAddSubtask,
 }: {
   parentTaskId: string;
   projectId?: string | null;
   subtasks: SubtaskRow[];
   people: PickablePerson[];
+  canAddSubtask: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -58,17 +60,21 @@ export function SubtasksSection({
           </div>
         </div>
       ))}
-      <Button size="sm" variant="ghost" onClick={() => setOpen(true)} className="mt-1">
-        <Plus className="h-3.5 w-3.5" /> Add subtask
-      </Button>
-      <AddTaskModal
-        open={open}
-        onClose={() => setOpen(false)}
-        projectId={projectId}
-        parentTaskId={parentTaskId}
-        people={people}
-        title="New subtask"
-      />
+      {canAddSubtask && (
+        <>
+          <Button size="sm" variant="ghost" onClick={() => setOpen(true)} className="mt-1">
+            <Plus className="h-3.5 w-3.5" /> Add subtask
+          </Button>
+          <AddTaskModal
+            open={open}
+            onClose={() => setOpen(false)}
+            projectId={projectId}
+            parentTaskId={parentTaskId}
+            people={people}
+            title="New subtask"
+          />
+        </>
+      )}
     </div>
   );
 }

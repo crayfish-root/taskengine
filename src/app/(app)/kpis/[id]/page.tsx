@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth";
+import { ELEVATED_LEVELS } from "@/lib/org";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/page-header";
@@ -15,6 +17,8 @@ import { ArrowLeft } from "lucide-react";
 
 export default async function KpiDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const currentUser = await getCurrentUser();
+  if (!currentUser) return null;
 
   const [kpi, departments, projects, users] = await Promise.all([
     prisma.kpi.findUnique({
@@ -40,6 +44,7 @@ export default async function KpiDetailPage({ params }: { params: Promise<{ id: 
 
   if (!kpi) notFound();
 
+  const canManage = currentUser.id === kpi.ownerId || ELEVATED_LEVELS.has(currentUser.level);
   const reading = readKpi(kpi.records, kpi.target, kpi.direction);
   const scope = kpi.project ? `${kpi.project.code} · ${kpi.project.name}` : kpi.department ? kpi.department.name : "Organization-wide";
   const progressColor =
@@ -72,6 +77,7 @@ export default async function KpiDetailPage({ params }: { params: Promise<{ id: 
             departments={departments}
             projects={projects}
             users={users}
+            canManage={canManage}
           />
         }
       />

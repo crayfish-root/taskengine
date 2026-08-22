@@ -13,11 +13,13 @@ export function KpiDetailActions({
   departments,
   projects,
   users,
+  canManage,
 }: {
   kpi: KpiFormValues;
   departments: { id: string; name: string }[];
   projects: { id: string; name: string; code: string }[];
   users: { id: string; name: string }[];
+  canManage: boolean;
 }) {
   const router = useRouter();
   const [deleting, setDeleting] = useState(false);
@@ -35,6 +37,8 @@ export function KpiDetailActions({
       window.alert(body.error ?? "Could not delete KPI");
     }
   }
+
+  if (!canManage) return null;
 
   return (
     <div className="flex items-center gap-2">

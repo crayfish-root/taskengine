@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { ELEVATED_LEVELS } from "@/lib/org";
 
 const bodySchema = z.object({
   name: z.string().trim().min(1).max(200),
@@ -33,6 +34,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request", issues: parsed.error.issues }, { status: 400 });
   }
   const d = parsed.data;
+
+  if (d.ownerId !== user.id && !ELEVATED_LEVELS.has(user.level)) {
+    return NextResponse.json({ error: "You can only create a project owned by yourself" }, { status: 403 });
+  }
 
   const existing = await prisma.project.findUnique({ where: { code: d.code } });
   if (existing) {

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { ELEVATED_LEVELS } from "@/lib/org";
 import { derivePeriodStart } from "@/app/(app)/kpis/_lib/kpi-math";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -18,6 +19,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const kpi = await prisma.kpi.findUnique({ where: { id } });
   if (!kpi) return NextResponse.json({ error: "KPI not found" }, { status: 404 });
+  if (kpi.ownerId !== user.id && !ELEVATED_LEVELS.has(user.level)) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
 
   const body = await req.json().catch(() => null);
   const parsed = createSchema.safeParse(body);

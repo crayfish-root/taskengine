@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { ELEVATED_LEVELS } from "@/lib/org";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -47,6 +48,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid input", issues: parsed.error.issues }, { status: 400 });
   }
   const data = parsed.data;
+
+  if (data.ownerId !== user.id && !ELEVATED_LEVELS.has(user.level)) {
+    return NextResponse.json({ error: "You can only create a KPI owned by yourself" }, { status: 403 });
+  }
 
   const kpi = await prisma.kpi.create({
     data: {

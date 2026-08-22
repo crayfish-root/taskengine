@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { canManageProject } from "@/lib/project-permissions";
+import { canActOnTask } from "@/lib/task-permissions";
+import { ELEVATED_LEVELS } from "@/lib/org";
 
 const bodySchema = z
   .object({
@@ -28,6 +31,14 @@ export async function POST(req: NextRequest) {
   if (d.taskId && !projectId) {
     const task = await prisma.task.findUnique({ where: { id: d.taskId }, select: { projectId: true } });
     projectId = task?.projectId ?? null;
+  }
+
+  const allowed =
+    ELEVATED_LEVELS.has(user.level) ||
+    (d.taskId ? await canActOnTask(user.id, d.taskId) : false) ||
+    (!d.taskId && projectId ? await canManageProject(user.id, projectId) : false);
+  if (!allowed) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 
   const blocker = await prisma.blocker.create({

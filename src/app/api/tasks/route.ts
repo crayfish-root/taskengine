@@ -3,6 +3,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { ALL_TASK_STATUSES } from "@/lib/task-utils";
+import { canManageProject } from "@/lib/project-permissions";
+import { ELEVATED_LEVELS } from "@/lib/org";
 
 const bodySchema = z.object({
   title: z.string().trim().min(1).max(300),
@@ -34,6 +36,10 @@ export async function POST(req: NextRequest) {
       parentDepth = parent.delegationDepth;
       if (!d.projectId) d.projectId = parent.projectId;
     }
+  }
+
+  if (d.projectId && !ELEVATED_LEVELS.has(user.level) && !(await canManageProject(user.id, d.projectId))) {
+    return NextResponse.json({ error: "Not authorized to add tasks to this project" }, { status: 403 });
   }
 
   const task = await prisma.task.create({

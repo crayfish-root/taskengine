@@ -5,6 +5,9 @@ import { notify } from "@/lib/notify";
 import { MAX_UPLOAD_BYTES, MAX_INLINE_BYTES, estimateDataUrlBytes } from "@/lib/documents";
 import { storageConfigured, prepareDocumentStorage } from "@/lib/storage";
 import { canViewDocument } from "@/lib/document-access";
+import { canManageProject } from "@/lib/project-permissions";
+import { canActOnTask } from "@/lib/task-permissions";
+import { ELEVATED_LEVELS } from "@/lib/org";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -96,10 +99,16 @@ export async function POST(req: NextRequest) {
   if (projectId) {
     const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true, name: true, ownerId: true } });
     if (!project) return NextResponse.json({ error: "Selected project was not found" }, { status: 400 });
+    if (!ELEVATED_LEVELS.has(user.level) && !(await canManageProject(user.id, projectId))) {
+      return NextResponse.json({ error: "Not authorized to attach documents to this project" }, { status: 403 });
+    }
   }
   if (taskId) {
     const task = await prisma.task.findUnique({ where: { id: taskId }, select: { id: true, title: true, createdById: true } });
     if (!task) return NextResponse.json({ error: "Selected task was not found" }, { status: 400 });
+    if (!ELEVATED_LEVELS.has(user.level) && !(await canActOnTask(user.id, taskId))) {
+      return NextResponse.json({ error: "Not authorized to attach documents to this task" }, { status: 403 });
+    }
   }
 
   const stored = await prepareDocumentStorage(mimeType, dataUrl, name);

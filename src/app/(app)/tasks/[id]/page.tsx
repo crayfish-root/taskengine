@@ -40,7 +40,10 @@ export default async function TaskDetailPage({ params }: { params: Promise<{ id:
         include: { assignments: { include: { user: { select: { id: true, name: true, avatarColor: true, avatarEmoji: true } } } } },
       },
       comments: { orderBy: { createdAt: "asc" }, include: { author: { select: { id: true, name: true, avatarColor: true, avatarEmoji: true } } } },
-      documents: { orderBy: { createdAt: "desc" }, include: { uploadedBy: { select: { name: true } } } },
+      documents: {
+        orderBy: { createdAt: "desc" },
+        select: { id: true, name: true, mimeType: true, size: true, createdAt: true, uploadedBy: { select: { name: true } } },
+      },
       statusHistory: { orderBy: { createdAt: "desc" }, include: { by: { select: { name: true, avatarColor: true, avatarEmoji: true } } } },
       blockers: { orderBy: { createdAt: "desc" } },
     },

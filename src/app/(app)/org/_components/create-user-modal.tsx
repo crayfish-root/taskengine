@@ -6,6 +6,7 @@ import { UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Input, Select, Label, FieldGroup } from "@/components/ui/input";
+import { CopyField } from "@/components/ui/copy-field";
 import { ORG_LEVEL } from "@/lib/status";
 
 interface Option {
@@ -27,7 +28,7 @@ export function CreateUserModalButton({
     <>
       <Button variant="primary" onClick={() => setOpen(true)}>
         <UserPlus className="h-4 w-4" />
-        New user
+        Invite person
       </Button>
       <CreateUserModal open={open} onClose={() => setOpen(false)} departments={departments} teams={teams} managers={managers} />
     </>
@@ -57,6 +58,8 @@ function CreateUserModal({
   const [teamIds, setTeamIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [invitedName, setInvitedName] = useState("");
 
   function reset() {
     setName("");
@@ -67,17 +70,25 @@ function CreateUserModal({
     setManagerId("");
     setTeamIds([]);
     setError(null);
+    setInviteLink(null);
   }
 
   function toggleTeam(id: string) {
     setTeamIds((prev) => (prev.includes(id) ? prev.filter((t) => t !== id) : [...prev, id]));
   }
 
+  function handleClose() {
+    const wasInvited = inviteLink !== null;
+    reset();
+    onClose();
+    if (wasInvited) router.refresh();
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    const res = await fetch("/api/org/users", {
+    const res = await fetch("/api/org/users/invite", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -96,9 +107,27 @@ function CreateUserModal({
       setError(data.error ?? "Something went wrong");
       return;
     }
-    reset();
-    onClose();
-    router.refresh();
+    const data = await res.json();
+    setInvitedName(name);
+    setInviteLink(`${window.location.origin}/accept-invite?token=${data.token}`);
+  }
+
+  if (inviteLink) {
+    return (
+      <Modal open={open} onClose={handleClose} title="Invite sent" size="lg">
+        <div className="space-y-4">
+          <p className="text-[13.5px] text-foreground">
+            {invitedName}&apos;s account has been created and is pending activation. Share this link with them — it expires in 7 days:
+          </p>
+          <CopyField value={inviteLink} />
+          <div className="flex justify-end pt-2">
+            <Button variant="primary" onClick={handleClose}>
+              Done
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    );
   }
 
   return (
@@ -108,8 +137,8 @@ function CreateUserModal({
         onClose();
         setError(null);
       }}
-      title="New user"
-      description="Password defaults to password123 for demo accounts."
+      title="Invite person"
+      description="Creates a pending account and gives you a one-time link to set them up with — no email is sent automatically."
       size="lg"
     >
       <form onSubmit={onSubmit} className="space-y-4">
@@ -197,7 +226,7 @@ function CreateUserModal({
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={loading}>
-            {loading ? "Creating…" : "Create user"}
+            {loading ? "Creating…" : "Create invite"}
           </Button>
         </div>
       </form>

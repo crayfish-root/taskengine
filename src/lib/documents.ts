@@ -1,7 +1,8 @@
 // Shared, framework-agnostic helpers for the Documents module — safe to import
 // from both server (API routes, RSC) and client components.
 
-export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5MB — keep the SQLite demo db snappy
+export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024; // 20MB hard cap, enforced regardless of storage backend
+export const MAX_INLINE_BYTES = 5 * 1024 * 1024; // 5MB cap when object storage isn't configured and files fall back to inline storage
 
 export type DocCategory = "image" | "pdf" | "spreadsheet" | "presentation" | "document" | "text" | "archive" | "other";
 

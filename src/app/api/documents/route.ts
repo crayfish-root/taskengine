@@ -2,13 +2,26 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
 import { notify } from "@/lib/notify";
-import { MAX_UPLOAD_BYTES, estimateDataUrlBytes } from "@/lib/documents";
+import { MAX_UPLOAD_BYTES, MAX_INLINE_BYTES, estimateDataUrlBytes } from "@/lib/documents";
+import { storageConfigured, prepareDocumentStorage } from "@/lib/storage";
+import { canViewDocument } from "@/lib/document-access";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
-const DOCUMENT_INCLUDE = {
+// Excludes dataUrl/storageKey — file bytes are served separately via /api/documents/[id]/file
+// so list responses don't ship megabyte-sized base64 blobs.
+const DOCUMENT_SELECT = {
+  id: true,
+  name: true,
+  mimeType: true,
+  size: true,
+  restricted: true,
+  createdAt: true,
+  uploadedById: true,
   uploadedBy: { select: { id: true, name: true, avatarColor: true, avatarEmoji: true } },
+  projectId: true,
   project: { select: { id: true, name: true, code: true } },
+  taskId: true,
   task: { select: { id: true, title: true, projectId: true, project: { select: { id: true, name: true, code: true } } } },
 } as const;
 
@@ -33,11 +46,15 @@ export async function GET(req: NextRequest) {
   const documents = await prisma.document.findMany({
     where,
     orderBy: { createdAt: "desc" },
-    include: DOCUMENT_INCLUDE,
+    select: DOCUMENT_SELECT,
     take: 500,
   });
 
-  return NextResponse.json({ documents });
+  const visible = (
+    await Promise.all(documents.map(async (d) => ((await canViewDocument(user.id, user.level, d)) ? d : null)))
+  ).filter((d): d is (typeof documents)[number] => d !== null);
+
+  return NextResponse.json({ documents: visible });
 }
 
 const uploadSchema = z.object({
@@ -47,6 +64,7 @@ const uploadSchema = z.object({
   dataUrl: z.string().startsWith("data:"),
   projectId: z.string().trim().min(1).nullable().optional(),
   taskId: z.string().trim().min(1).nullable().optional(),
+  restricted: z.boolean().optional().default(false),
 });
 
 export async function POST(req: NextRequest) {
@@ -59,14 +77,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid upload payload", issues: parsed.error.issues }, { status: 400 });
   }
 
-  const { name, mimeType, size, dataUrl, projectId, taskId } = parsed.data;
+  const { name, mimeType, size, dataUrl, projectId, taskId, restricted } = parsed.data;
 
   if (size > MAX_UPLOAD_BYTES) {
-    return NextResponse.json({ error: "File is too large. Maximum size is 5MB." }, { status: 413 });
+    return NextResponse.json({ error: "File is too large. Maximum size is 20MB." }, { status: 413 });
   }
   const actualBytes = estimateDataUrlBytes(dataUrl);
   if (actualBytes > MAX_UPLOAD_BYTES) {
-    return NextResponse.json({ error: "File is too large. Maximum size is 5MB." }, { status: 413 });
+    return NextResponse.json({ error: "File is too large. Maximum size is 20MB." }, { status: 413 });
+  }
+  if (!storageConfigured() && actualBytes > MAX_INLINE_BYTES) {
+    return NextResponse.json(
+      { error: "Files over 5MB require object storage to be configured. Ask an admin to set it up." },
+      { status: 413 }
+    );
   }
 
   if (projectId) {
@@ -78,17 +102,22 @@ export async function POST(req: NextRequest) {
     if (!task) return NextResponse.json({ error: "Selected task was not found" }, { status: 400 });
   }
 
+  const stored = await prepareDocumentStorage(mimeType, dataUrl, name);
+
   const document = await prisma.document.create({
     data: {
+      id: stored.id,
       name,
       mimeType,
       size,
-      dataUrl,
+      dataUrl: stored.dataUrl,
+      storageKey: stored.storageKey,
+      restricted,
       uploadedById: user.id,
       projectId: projectId || null,
       taskId: taskId || null,
     },
-    include: DOCUMENT_INCLUDE,
+    select: DOCUMENT_SELECT,
   });
 
   await logActivity(prisma, {

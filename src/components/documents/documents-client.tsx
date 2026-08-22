@@ -26,6 +26,8 @@ import {
   ListChecks,
   Loader2,
   Download,
+  Lock,
+  Unlock,
 } from "lucide-react";
 
 interface DocumentUser {
@@ -40,7 +42,7 @@ interface DocumentRow {
   name: string;
   mimeType: string;
   size: number;
-  dataUrl: string;
+  restricted: boolean;
   createdAt: string | Date;
   uploadedBy: DocumentUser;
   project: { id: string; name: string; code: string } | null;
@@ -139,6 +141,27 @@ export function DocumentsClient({
     }
   }
 
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  async function toggleRestricted(id: string, next: boolean) {
+    setTogglingId(id);
+    try {
+      const res = await fetch(`/api/documents/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ restricted: next }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Could not update visibility");
+      }
+      router.refresh();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Could not update visibility");
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 pb-5">
@@ -214,13 +237,14 @@ export function DocumentsClient({
                 {filtered.map((doc) => {
                   const cat = categorizeMime(doc.mimeType);
                   const Icon = CATEGORY_ICONS[cat];
-                  const canDelete = doc.uploadedBy.id === currentUser.id || ["CIO", "DIRECTOR", "HEAD_OF_DEPARTMENT"].includes(currentUser.level);
+                  const canManage = doc.uploadedBy.id === currentUser.id || ["CIO", "DIRECTOR", "HEAD_OF_DEPARTMENT"].includes(currentUser.level);
+                  const fileUrl = `/api/documents/${doc.id}/file`;
                   return (
                     <div key={doc.id} className="flex flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:gap-3">
                       <div className="flex min-w-0 flex-1 items-center gap-3">
                         {cat === "image" ? (
                           <img
-                            src={doc.dataUrl}
+                            src={fileUrl}
                             alt=""
                             className="h-10 w-10 shrink-0 rounded-[8px] object-cover border border-border-soft"
                           />
@@ -246,6 +270,14 @@ export function DocumentsClient({
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:flex-nowrap">
+                        {doc.restricted && (
+                          <span
+                            title="Restricted — only the uploader, elevated roles, and the attached project/task team can see this"
+                            className="inline-flex items-center gap-1 rounded-full bg-warning-soft px-2.5 py-1 text-[11.5px] font-medium text-warning"
+                          >
+                            <Lock className="h-3 w-3" /> Restricted
+                          </span>
+                        )}
                         {doc.project && (
                           <Link
                             href={`/projects/${doc.project.id}`}
@@ -268,14 +300,30 @@ export function DocumentsClient({
                           </span>
                         )}
                         <a
-                          href={doc.dataUrl}
+                          href={fileUrl}
                           download={doc.name}
                           className="shrink-0 rounded-full p-1.5 text-muted hover:bg-black/[0.05] dark:hover:bg-white/[0.08] hover:text-foreground transition-colors"
                           title="Download"
                         >
                           <Download className="h-3.5 w-3.5" />
                         </a>
-                        {canDelete && (
+                        {canManage && (
+                          <button
+                            onClick={() => toggleRestricted(doc.id, !doc.restricted)}
+                            disabled={togglingId === doc.id}
+                            className="shrink-0 rounded-full p-1.5 text-muted hover:bg-black/[0.05] dark:hover:bg-white/[0.08] hover:text-foreground transition-colors"
+                            title={doc.restricted ? "Make visible company-wide" : "Restrict visibility"}
+                          >
+                            {togglingId === doc.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : doc.restricted ? (
+                              <Unlock className="h-3.5 w-3.5" />
+                            ) : (
+                              <Lock className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        )}
+                        {canManage && (
                           <button
                             onClick={() => handleDelete(doc.id)}
                             disabled={deletingId === doc.id}

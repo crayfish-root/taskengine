@@ -7,13 +7,14 @@ import { Input, Label, FieldGroup } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { TargetPicker, TargetOption } from "./target-picker";
 import { MAX_UPLOAD_BYTES, formatFileSize } from "@/lib/documents";
-import { UploadCloud, FileWarning } from "lucide-react";
+import { UploadCloud, FileWarning, Lock } from "lucide-react";
 
 export function UploadModal({ open, onClose, onUploaded }: { open: boolean; onClose: () => void; onUploaded: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [name, setName] = useState("");
   const [kind, setKind] = useState<"none" | "project" | "task">("none");
   const [target, setTarget] = useState<TargetOption | null>(null);
+  const [restricted, setRestricted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -23,6 +24,7 @@ export function UploadModal({ open, onClose, onUploaded }: { open: boolean; onCl
     setName("");
     setKind("none");
     setTarget(null);
+    setRestricted(false);
     setError(null);
     setUploading(false);
   }
@@ -40,7 +42,7 @@ export function UploadModal({ open, onClose, onUploaded }: { open: boolean; onCl
       return;
     }
     if (f.size > MAX_UPLOAD_BYTES) {
-      setError(`"${f.name}" is ${formatFileSize(f.size)} — the limit is 5MB.`);
+      setError(`"${f.name}" is ${formatFileSize(f.size)} — the limit is ${formatFileSize(MAX_UPLOAD_BYTES)}.`);
       setFile(null);
       return;
     }
@@ -71,6 +73,7 @@ export function UploadModal({ open, onClose, onUploaded }: { open: boolean; onCl
           dataUrl,
           projectId: kind === "project" ? target?.id : null,
           taskId: kind === "task" ? target?.id : null,
+          restricted,
         }),
       });
       if (!res.ok) {
@@ -88,7 +91,7 @@ export function UploadModal({ open, onClose, onUploaded }: { open: boolean; onCl
   }
 
   return (
-    <Modal open={open} onClose={handleClose} title="Upload document" description="Files stay under 5MB and are stored inline.">
+    <Modal open={open} onClose={handleClose} title="Upload document" description={`Files stay under ${formatFileSize(MAX_UPLOAD_BYTES)}.`}>
       <div className="space-y-4">
         <div
           onClick={() => inputRef.current?.click()}
@@ -146,6 +149,25 @@ export function UploadModal({ open, onClose, onUploaded }: { open: boolean; onCl
             placeholder={kind === "project" ? "Search projects…" : "Search tasks…"}
           />
         )}
+
+        <label className="flex items-start gap-2.5 rounded-[10px] border border-border-soft p-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={restricted}
+            onChange={(e) => setRestricted(e.target.checked)}
+            className="mt-0.5 h-3.5 w-3.5 accent-[var(--warning)]"
+          />
+          <span className="text-[12.5px] text-foreground">
+            <span className="inline-flex items-center gap-1 font-medium">
+              <Lock className="h-3 w-3" /> Restricted
+            </span>
+            <br />
+            <span className="text-muted">
+              Only you, elevated roles, and {kind === "none" ? "no one else" : `the ${kind}'s team`} can see this — everyone else can
+              see everything else by default.
+            </span>
+          </span>
+        </label>
 
         {error && (
           <div className="flex items-start gap-2 rounded-[10px] bg-danger-soft px-3 py-2.5 text-[12.5px] text-danger">

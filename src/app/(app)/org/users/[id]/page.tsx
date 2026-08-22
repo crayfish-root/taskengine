@@ -2,7 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ChevronRight, ListChecks, CalendarOff } from "lucide-react";
-import { getManagerChain, getAllReportIds } from "@/lib/org";
+import { getManagerChain, getAllReportIds, ELEVATED_LEVELS } from "@/lib/org";
+import { getCurrentUser } from "@/lib/auth";
 import { cn, levelLabel } from "@/lib/utils";
 import { ORG_LEVEL } from "@/lib/status";
 import { PageHeader } from "@/components/ui/page-header";
@@ -12,9 +13,11 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { EditUserModalButton } from "../../_components/edit-user-modal";
+import { ResendInviteButton, ResetPasswordButton } from "../../_components/user-account-actions";
 
 export default async function UserProfilePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const viewer = await getCurrentUser();
 
   const user = await prisma.user.findUnique({
     where: { id },
@@ -25,6 +28,7 @@ export default async function UserProfilePage({ params }: { params: Promise<{ id
       title: true,
       level: true,
       active: true,
+      passwordHash: true,
       avatarColor: true,
       avatarEmoji: true,
       departmentId: true,
@@ -54,6 +58,8 @@ export default async function UserProfilePage({ params }: { params: Promise<{ id
     ]);
 
   const breadcrumb = [...managerChain].reverse(); // top of org (CIO) first, down to this person's direct manager
+  const pending = !user.active && !user.passwordHash;
+  const canManageAccount = !!viewer && ELEVATED_LEVELS.has(viewer.level);
 
   return (
     <div>
@@ -75,22 +81,25 @@ export default async function UserProfilePage({ params }: { params: Promise<{ id
         title={user.name}
         description={user.title ?? undefined}
         actions={
-          <EditUserModalButton
-            user={{
-              id: user.id,
-              name: user.name,
-              email: user.email,
-              title: user.title,
-              level: user.level,
-              active: user.active,
-              departmentId: user.departmentId,
-              managerId: user.managerId,
-              teamIds: user.teamMemberships.map((m) => m.team.id),
-            }}
-            departments={departments}
-            teams={teams}
-            managers={managerOptions}
-          />
+          <div className="flex items-center gap-2">
+            {canManageAccount && (pending ? <ResendInviteButton userId={user.id} /> : <ResetPasswordButton userId={user.id} />)}
+            <EditUserModalButton
+              user={{
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                title: user.title,
+                level: user.level,
+                active: user.active,
+                departmentId: user.departmentId,
+                managerId: user.managerId,
+                teamIds: user.teamMemberships.map((m) => m.team.id),
+              }}
+              departments={departments}
+              teams={teams}
+              managers={managerOptions}
+            />
+          </div>
         }
       />
 
@@ -103,7 +112,11 @@ export default async function UserProfilePage({ params }: { params: Promise<{ id
               <p className="text-[12.5px] text-muted">{user.email}</p>
               <div className="mt-3 flex flex-wrap justify-center gap-1.5">
                 <StatusBadge map={ORG_LEVEL} value={user.level} dot={false} />
-                {!user.active && <Badge tone="danger">Inactive</Badge>}
+                {pending ? (
+                  <Badge tone="accent">Pending invite</Badge>
+                ) : (
+                  !user.active && <Badge tone="danger">Deactivated</Badge>
+                )}
               </div>
             </CardContent>
           </Card>

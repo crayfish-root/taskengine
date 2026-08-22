@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FileText, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatDate } from "@/lib/utils";
+import { MAX_UPLOAD_BYTES, formatFileSize } from "@/lib/documents";
 
 export interface DocumentRow {
   id: string;
@@ -43,8 +44,8 @@ export function DocumentsSection({ taskId, documents }: { taskId: string; docume
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 8 * 1024 * 1024) {
-      setError("File too large (max 8MB)");
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(`File too large (max ${formatFileSize(MAX_UPLOAD_BYTES)})`);
       e.target.value = "";
       return;
     }

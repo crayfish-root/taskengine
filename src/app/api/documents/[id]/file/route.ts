@@ -1,18 +1,18 @@
-import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { canActOnTask } from "@/lib/task-permissions";
+import { canViewDocument } from "@/lib/document-access";
 import { getStorageDownloadUrl } from "@/lib/storage";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string; docId: string }> }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
-  const { id, docId } = await params;
-  const doc = await prisma.document.findUnique({ where: { id: docId } });
-  if (!doc || doc.taskId !== id) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const { id } = await params;
+  const doc = await prisma.document.findUnique({ where: { id } });
+  if (!doc) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  if (!(await canActOnTask(user.id, id))) {
+  if (!(await canViewDocument(user.id, user.level, doc))) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
   }
 

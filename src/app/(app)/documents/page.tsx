@@ -1,11 +1,23 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { canViewDocument } from "@/lib/document-access";
 import { PageHeader } from "@/components/ui/page-header";
 import { DocumentsClient } from "@/components/documents/documents-client";
 
-const DOCUMENT_INCLUDE = {
+// Excludes dataUrl/storageKey — file bytes are served separately via /api/documents/[id]/file
+// so this page's initial payload doesn't ship megabyte-sized base64 blobs.
+const DOCUMENT_SELECT = {
+  id: true,
+  name: true,
+  mimeType: true,
+  size: true,
+  restricted: true,
+  createdAt: true,
+  uploadedById: true,
   uploadedBy: { select: { id: true, name: true, avatarColor: true, avatarEmoji: true } },
+  projectId: true,
   project: { select: { id: true, name: true, code: true } },
+  taskId: true,
   task: { select: { id: true, title: true, projectId: true, project: { select: { id: true, name: true, code: true } } } },
 } as const;
 
@@ -13,10 +25,10 @@ export default async function DocumentsPage() {
   const user = await getCurrentUser();
   if (!user) return null;
 
-  const [documents, activity] = await Promise.all([
+  const [allDocuments, activity] = await Promise.all([
     prisma.document.findMany({
       orderBy: { createdAt: "desc" },
-      include: DOCUMENT_INCLUDE,
+      select: DOCUMENT_SELECT,
       take: 500,
     }),
     prisma.activityLog.findMany({
@@ -25,6 +37,10 @@ export default async function DocumentsPage() {
       include: { user: { select: { id: true, name: true, avatarColor: true, avatarEmoji: true } } },
     }),
   ]);
+
+  const documents = (
+    await Promise.all(allDocuments.map(async (d) => ((await canViewDocument(user.id, user.level, d)) ? d : null)))
+  ).filter((d): d is (typeof allDocuments)[number] => d !== null);
 
   return (
     <div>

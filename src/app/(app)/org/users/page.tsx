@@ -42,6 +42,7 @@ export default async function UsersDirectoryPage({
         title: true,
         level: true,
         active: true,
+        passwordHash: true,
         avatarColor: true,
         avatarEmoji: true,
         department: { select: { id: true, name: true, color: true } },
@@ -71,24 +72,31 @@ export default async function UsersDirectoryPage({
           <EmptyState icon={UsersIcon} title="No matches" description="Try a different search or clear a filter." />
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {users.map((u) => (
-              <Link key={u.id} href={`/org/users/${u.id}`} className="block">
-                <Card className={cn("h-full transition-shadow hover:shadow-[var(--shadow-sm)]", !u.active && "opacity-60")}>
-                  <CardContent className="flex items-start gap-3 p-4">
-                    <Avatar name={u.name} color={u.avatarColor} emoji={u.avatarEmoji} size="md" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[13.5px] font-medium text-foreground">{u.name}</p>
-                      <p className="truncate text-[12px] text-muted">{u.title ?? "—"}</p>
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                        <StatusBadge map={ORG_LEVEL} value={u.level} dot={false} />
-                        {u.department && <Badge tone="neutral">{u.department.name}</Badge>}
-                        {!u.active && <Badge tone="danger">Inactive</Badge>}
+            {users.map((u) => {
+              const pending = !u.active && !u.passwordHash;
+              return (
+                <Link key={u.id} href={`/org/users/${u.id}`} className="block">
+                  <Card className={cn("h-full transition-shadow hover:shadow-[var(--shadow-sm)]", !u.active && "opacity-60")}>
+                    <CardContent className="flex items-start gap-3 p-4">
+                      <Avatar name={u.name} color={u.avatarColor} emoji={u.avatarEmoji} size="md" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[13.5px] font-medium text-foreground">{u.name}</p>
+                        <p className="truncate text-[12px] text-muted">{u.title ?? "—"}</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                          <StatusBadge map={ORG_LEVEL} value={u.level} dot={false} />
+                          {u.department && <Badge tone="neutral">{u.department.name}</Badge>}
+                          {pending ? (
+                            <Badge tone="accent">Pending invite</Badge>
+                          ) : (
+                            !u.active && <Badge tone="danger">Deactivated</Badge>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
           </div>
         )}
       </div>

@@ -65,7 +65,7 @@ model User {
   id            String   @id @default(cuid())
   email         String   @unique
   name          String
-  passwordHash  String
+  passwordHash  String?
   title         String?
   avatarColor   String   @default("#6366f1")
   avatarEmoji   String?
@@ -109,6 +109,35 @@ model User {
   notifications   Notification[]
   activityLogs    ActivityLog[]
   statusHistory   TaskStatusEvent[]
+
+  authTokens       AuthToken[] @relation("AuthTokenUser")
+  authTokensIssued AuthToken[] @relation("AuthTokenIssuedBy")
+}
+
+// ---------------------------------------------------------------------------
+// Invite / password-reset tokens
+// ---------------------------------------------------------------------------
+
+enum AuthTokenKind {
+  INVITE
+  PASSWORD_RESET
+}
+
+model AuthToken {
+  id         String        @id @default(cuid())
+  token      String        @unique
+  kind       AuthTokenKind
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime      @default(now())
+
+  userId     String
+  user       User          @relation("AuthTokenUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  issuedById String?
+  issuedBy   User?         @relation("AuthTokenIssuedBy", fields: [issuedById], references: [id])
+
+  @@index([userId])
 }
 
 // ---------------------------------------------------------------------------
@@ -488,7 +517,9 @@ model Document {
   name       String
   mimeType   String
   size       Int
-  dataUrl    String   // base64 data URL — self-contained blob storage
+  dataUrl    String?  // legacy base64 data URL — kept for documents uploaded before object storage
+  storageKey String?  // S3-compatible object key — all new uploads go here
+  restricted Boolean  @default(false) // when true: only the uploader, elevated roles, and the attached project/task's team can see it
   createdAt  DateTime @default(now())
 
   uploadedById String

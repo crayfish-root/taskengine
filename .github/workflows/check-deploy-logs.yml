@@ -37,7 +37,6 @@ jobs:
           PROJECT=$(echo "$ALL" | jq -c '[.[] | select(.name=="taskengine")] | sort_by(.createdAt) | last')
           APPLICATION_ID=$(echo "$PROJECT" | jq -r '.environments[0].applications[0].applicationId')
 
-          DEPLOYS=$(call GET "deployment.allByType?id=$APPLICATION_ID&type=application")
-          LATEST_ID=$(echo "$DEPLOYS" | jq -r 'if type=="array" then . else (.deployments // .data // []) end | sort_by(.createdAt) | last | .deploymentId')
-          echo "latest deploymentId: $LATEST_ID"
-          curl -sS "$API/deployment.readLogs?deploymentId=$LATEST_ID&tail=2000" -H "x-api-key: $DOKPLOY_TOKEN" | jq -r 'if type=="string" then . else tostring end'
+          echo "applicationId: $APPLICATION_ID"
+          echo "== Running container logs (stdout) =="
+          curl -sS "$API/application.readLogs?applicationId=$APPLICATION_ID&tail=500" -H "x-api-key: $DOKPLOY_TOKEN" | jq -r 'if type=="string" then . else tostring end'

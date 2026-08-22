@@ -4,7 +4,7 @@ import { NAV_SECTIONS } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Layers } from "lucide-react";
+import { BrandMark } from "@/components/ui/brand-mark";
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -13,7 +13,7 @@ export function Sidebar() {
     <aside className="hidden md:flex w-[232px] shrink-0 flex-col border-r border-border bg-surface/60 backdrop-blur-xl">
       <div className="flex items-center gap-2 px-5 py-5">
         <div className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-accent text-white">
-          <Layers className="h-4 w-4" strokeWidth={2.25} />
+          <BrandMark className="h-4 w-4" />
         </div>
         <span className="text-[15px] font-semibold tracking-[-0.01em]">TaskEngine</span>
       </div>

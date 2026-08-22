@@ -1,4 +1,4 @@
-import { Layers } from "lucide-react";
+import { BrandMark } from "@/components/ui/brand-mark";
 import { LoginForm } from "./login-form";
 import { Suspense } from "react";
 
@@ -8,7 +8,7 @@ export default function LoginPage() {
       <div className="w-full max-w-[380px]">
         <div className="mb-8 flex flex-col items-center text-center">
           <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-[14px] bg-accent text-white shadow-[var(--shadow-md)]">
-            <Layers className="h-6 w-6" strokeWidth={2.25} />
+            <BrandMark className="h-6 w-6" />
           </div>
           <h1 className="text-[20px] font-semibold tracking-[-0.015em]">TaskEngine</h1>
           <p className="mt-1 text-[13.5px] text-muted">The single place that keeps everyone up to speed.</p>

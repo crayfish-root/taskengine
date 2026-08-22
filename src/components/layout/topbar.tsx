@@ -20,14 +20,14 @@ export async function Topbar({
   const unread = await prisma.notification.count({ where: { userId: user.id, read: false } }).catch(() => 0);
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface/70 px-5 backdrop-blur-xl">
-      <div className="flex items-center gap-2 text-[13px] text-muted">
-        <span className="font-medium text-foreground">{levelLabel(user.level)}</span>
-        <span>·</span>
-        <span>{user.title ?? "Team Member"}</span>
+    <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-surface/70 px-4 md:px-5 backdrop-blur-xl">
+      <div className="flex min-w-0 items-center gap-2 text-[13px] text-muted">
+        <span className="shrink-0 font-medium text-foreground">{levelLabel(user.level)}</span>
+        <span className="hidden sm:inline shrink-0">·</span>
+        <span className="hidden sm:inline truncate">{user.title ?? "Team Member"}</span>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-3">
         <Link
           href="/notifications"
           className="relative flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-black/[0.05] dark:hover:bg-white/[0.08] hover:text-foreground transition-colors"

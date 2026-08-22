@@ -1,0 +1,169 @@
+name: Redeploy and verify mobile nav
+
+# One-off: redeploys the existing "taskengine" Dokploy app (main branch
+# already has the new commit) and then drives it headlessly at a phone
+# viewport to confirm the bottom nav / More sheet actually render and
+# work — this sandbox has no local Postgres to test against directly.
+on:
+  workflow_dispatch:
+    inputs:
+      dokploy_url:
+        description: "Dokploy dashboard base URL"
+        required: true
+      dokploy_token:
+        description: "Dokploy API token"
+        required: true
+      demo_email:
+        description: "Demo account email to log in with"
+        required: false
+        default: "cio@taskengine.io"
+      demo_password:
+        description: "Demo account password"
+        required: false
+        default: "password123"
+
+jobs:
+  redeploy-and-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mask tokens
+        uses: actions/github-script@v7
+        env:
+          DOKPLOY_TOKEN: ${{ inputs.dokploy_token }}
+          DEMO_PASSWORD: ${{ inputs.demo_password }}
+        with:
+          script: |
+            core.setSecret(process.env.DOKPLOY_TOKEN);
+            core.setSecret(process.env.DEMO_PASSWORD);
+
+      - name: Redeploy application
+        id: deploy
+        env:
+          DOKPLOY_TOKEN: ${{ inputs.dokploy_token }}
+          DOKPLOY_URL_RAW: ${{ inputs.dokploy_url }}
+        run: |
+          set -euo pipefail
+          BASE="$DOKPLOY_URL_RAW"
+          if [[ "$BASE" != http://* && "$BASE" != https://* ]]; then BASE="https://$BASE"; fi
+          BASE="${BASE%/}"
+          API="$BASE/api"
+          call() {
+            local method="$1" path="$2" body="${3:-}"
+            if [ -n "$body" ]; then
+              curl -sS -X "$method" "$API/$path" -H "x-api-key: $DOKPLOY_TOKEN" -H "Content-Type: application/json" -d "$body"
+            else
+              curl -sS -X "$method" "$API/$path" -H "x-api-key: $DOKPLOY_TOKEN"
+            fi
+          }
+          check_err() {
+            if echo "$2" | jq -e 'type == "object" and has("code")' >/dev/null 2>&1; then echo "$1 failed: $2"; exit 1; fi
+          }
+
+          ALL=$(call GET project.all)
+          PROJECT=$(echo "$ALL" | jq -c '[.[] | select(.name=="taskengine")] | sort_by(.createdAt) | last')
+          APPLICATION_ID=$(echo "$PROJECT" | jq -r '.environments[0].applications[0].applicationId')
+          echo "applicationId=$APPLICATION_ID"
+
+          check_err "application.deploy" "$(call POST application.deploy "$(jq -n --arg id "$APPLICATION_ID" '{applicationId:$id, title:"Mobile nav redeploy"}')")"
+
+          for i in $(seq 1 60); do
+            DEPLOYS=$(call GET "deployment.allByType?id=$APPLICATION_ID&type=application")
+            STATUS=$(echo "$DEPLOYS" | jq -r 'if type=="array" then . else (.deployments // .data // []) end | sort_by(.createdAt) | last | .status // empty')
+            echo "deployment status: ${STATUS:-<none yet>}"
+            if [ "$STATUS" = "done" ]; then break; fi
+            if [ "$STATUS" = "error" ] || [ "$STATUS" = "cancelled" ]; then
+              DID=$(echo "$DEPLOYS" | jq -r 'if type=="array" then . else (.deployments // .data // []) end | sort_by(.createdAt) | last | .deploymentId // empty')
+              echo "Deployment failed: $STATUS"
+              if [ -n "$DID" ]; then call GET "deployment.readLogs?deploymentId=$DID&tail=300" | jq -r 'if type=="string" then . else tostring end'; fi
+              exit 1
+            fi
+            sleep 10
+          done
+
+          DOMAINS=$(call GET "domain.byApplicationId?applicationId=$APPLICATION_ID")
+          HOST=$(echo "$DOMAINS" | jq -r '.[0].host // empty')
+          echo "host=$HOST" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Playwright
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install playwright@1.48 >/dev/null 2>&1
+          npx playwright install --with-deps chromium >/dev/null 2>&1
+
+      - name: Drive the live app at phone viewport
+        env:
+          HOST: ${{ steps.deploy.outputs.host }}
+          DEMO_EMAIL: ${{ inputs.demo_email }}
+          DEMO_PASSWORD: ${{ inputs.demo_password }}
+        run: |
+          cat > check.mjs <<'EOF'
+          import { chromium } from "playwright";
+
+          const host = process.env.HOST;
+          const email = process.env.DEMO_EMAIL;
+          const password = process.env.DEMO_PASSWORD;
+          const base = `https://${host}`;
+
+          const browser = await chromium.launch();
+          const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+          const page = await context.newPage();
+          const errors = [];
+          page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+          page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message));
+
+          console.log("== Logging in ==");
+          await page.goto(`${base}/login`, { waitUntil: "networkidle" });
+          await page.fill('input#email', email);
+          await page.fill('input#password', password);
+          await page.click('button[type="submit"]');
+          await page.waitForURL(/dashboard/, { timeout: 15000 });
+          await page.waitForTimeout(500);
+          await page.screenshot({ path: "mobile-dashboard.png", fullPage: true });
+
+          console.log("== Checking bottom nav is visible ==");
+          const bottomNav = page.locator("nav.fixed.inset-x-0.bottom-0");
+          const navVisible = await bottomNav.isVisible().catch(() => false);
+          console.log("bottom nav visible:", navVisible);
+          if (!navVisible) { console.log("FAIL: bottom nav not visible on mobile viewport"); process.exit(1); }
+
+          console.log("== Checking sidebar is hidden ==");
+          const sidebar = page.locator("aside").first();
+          const sidebarVisible = await sidebar.isVisible().catch(() => false);
+          console.log("desktop sidebar visible (should be false):", sidebarVisible);
+          if (sidebarVisible) { console.log("FAIL: desktop sidebar showing on mobile viewport"); process.exit(1); }
+
+          console.log("== Tapping Tasks tab ==");
+          await page.click('nav.fixed a:has-text("Tasks")');
+          await page.waitForURL(/\/tasks/, { timeout: 10000 });
+          await page.waitForTimeout(400);
+          await page.screenshot({ path: "mobile-tasks.png", fullPage: true });
+
+          console.log("== Opening More sheet ==");
+          await page.click('nav.fixed button:has-text("More")');
+          await page.waitForTimeout(400);
+          const sheetVisible = await page.locator('text=Menu').first().isVisible().catch(() => false);
+          console.log("more sheet visible:", sheetVisible);
+          if (!sheetVisible) { console.log("FAIL: More sheet did not open"); process.exit(1); }
+          await page.screenshot({ path: "mobile-more-sheet.png", fullPage: true });
+
+          console.log("== Tapping a secondary nav item (Leave) from the sheet ==");
+          await page.click('a:has-text("Leave")');
+          await page.waitForURL(/\/leave/, { timeout: 10000 });
+          await page.waitForTimeout(400);
+          await page.screenshot({ path: "mobile-leave.png", fullPage: true });
+
+          console.log("\n=== CONSOLE ERRORS ===");
+          console.log(errors.length ? errors.join("\n") : "none");
+
+          await browser.close();
+          console.log("\nALL CHECKS PASSED");
+          EOF
+          node check.mjs
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-nav-screenshots
+          path: "*.png"
+          retention-days: 7

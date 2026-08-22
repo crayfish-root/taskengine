@@ -1,0 +1,67 @@
+name: Cleanup duplicate Dokploy projects
+
+# One-off utility: deploy-dokploy.yml isn't idempotent (project.create makes
+# a new project every run), so failed attempts before the working
+# nixpacks.toml fix left orphaned "taskengine" projects behind. This lists
+# all projects named "taskengine", keeps the most recently created one, and
+# deletes the rest. Safe to delete this workflow file once run.
+on:
+  workflow_dispatch:
+    inputs:
+      dokploy_url:
+        description: "Dokploy dashboard base URL"
+        required: true
+      dokploy_token:
+        description: "Dokploy API token"
+        required: true
+      dry_run:
+        description: "List what would be deleted without deleting"
+        required: false
+        default: "true"
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mask token
+        uses: actions/github-script@v7
+        env:
+          DOKPLOY_TOKEN: ${{ inputs.dokploy_token }}
+        with:
+          script: core.setSecret(process.env.DOKPLOY_TOKEN)
+
+      - name: List and delete duplicates
+        env:
+          DOKPLOY_TOKEN: ${{ inputs.dokploy_token }}
+          DOKPLOY_URL_RAW: ${{ inputs.dokploy_url }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          BASE="$DOKPLOY_URL_RAW"
+          if [[ "$BASE" != http://* && "$BASE" != https://* ]]; then
+            BASE="https://$BASE"
+          fi
+          BASE="${BASE%/}"
+          API="$BASE/api"
+
+          ALL=$(curl -sS "$API/project.all" -H "x-api-key: $DOKPLOY_TOKEN")
+
+          echo "== All 'taskengine' projects (oldest first) =="
+          echo "$ALL" | jq -c '[.[] | select(.name=="taskengine")] | sort_by(.createdAt)'
+
+          KEEP_ID=$(echo "$ALL" | jq -r '[.[] | select(.name=="taskengine")] | sort_by(.createdAt) | last | .projectId // empty')
+          if [ -z "$KEEP_ID" ]; then
+            echo "No 'taskengine' projects found."; exit 0
+          fi
+          echo "Keeping: $KEEP_ID"
+
+          echo "$ALL" | jq -r --arg keep "$KEEP_ID" '.[] | select(.name=="taskengine" and .projectId != $keep) | .projectId' | while read -r PID; do
+            echo "Deleting project $PID"
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "(dry run, skipping actual delete)"
+            else
+              curl -sS -X POST "$API/project.remove" -H "x-api-key: $DOKPLOY_TOKEN" -H "Content-Type: application/json" \
+                -d "$(jq -n --arg id "$PID" '{projectId:$id}')"
+              echo ""
+            fi
+          done

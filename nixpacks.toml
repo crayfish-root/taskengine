@@ -1,6 +1,12 @@
-# Overrides only the start phase (setup/install/build stay on Nixpacks'
-# default Node/Next.js detection). The container's SQLite file is ephemeral —
-# each boot gets a fresh, freshly-seeded demo dataset. db:push and db:seed
-# are both idempotent, so this is safe to run on every start/restart.
+# Nixpacks defaults to an older Node.js unless told otherwise — Next.js 16
+# requires >=20.9, so pin the setup phase explicitly rather than relying on
+# package.json#engines (which Nixpacks doesn't always honor for version
+# selection). Install/build stay on Nixpacks' default Node/Next.js detection.
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+# The container's SQLite file is ephemeral — each boot gets a fresh,
+# freshly-seeded demo dataset. db:push and db:seed are both idempotent, so
+# this is safe to run on every start/restart.
 [start]
 cmd = "npm run db:push && npm run db:seed && npm run start"

@@ -1,0 +1,183 @@
+name: Audit live app — crawl every route
+
+# Read-only: does NOT redeploy. Logs into the already-live app and visits
+# every page (discovering real dynamic IDs — project, task, user, team, kpi —
+# from list pages rather than hardcoding them), at both desktop and mobile
+# viewports, recording HTTP status and console/page errors for each.
+on:
+  workflow_dispatch:
+    inputs:
+      app_host:
+        description: "Live app hostname (no scheme), e.g. taskengine-xxx.sslip.io"
+        required: true
+      demo_email:
+        description: "Demo account email to log in with"
+        required: false
+        default: "cio@taskengine.io"
+      demo_password:
+        description: "Demo account password"
+        required: false
+        default: "password123"
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mask password
+        uses: actions/github-script@v7
+        env:
+          DEMO_PASSWORD: ${{ inputs.demo_password }}
+        with:
+          script: core.setSecret(process.env.DEMO_PASSWORD)
+
+      - name: Set up Playwright
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install playwright@1.48 >/dev/null 2>&1
+          npx playwright install --with-deps chromium >/dev/null 2>&1
+
+      - name: Crawl every route at desktop + mobile viewports
+        env:
+          HOST: ${{ inputs.app_host }}
+          DEMO_EMAIL: ${{ inputs.demo_email }}
+          DEMO_PASSWORD: ${{ inputs.demo_password }}
+        run: |
+          cat > crawl.mjs <<'EOF'
+          import { chromium } from "playwright";
+
+          const host = process.env.HOST;
+          const email = process.env.DEMO_EMAIL;
+          const password = process.env.DEMO_PASSWORD;
+          const base = `https://${host}`;
+
+          const STATIC_ROUTES = [
+            "/dashboard", "/dashboard/delays",
+            "/org", "/org/users", "/org/teams", "/org/departments",
+            "/projects", "/tasks", "/blockers",
+            "/kpis", "/updates", "/workflows",
+            "/leave", "/workload",
+            "/documents", "/notifications",
+          ];
+
+          async function login(page) {
+            await page.goto(`${base}/login`, { waitUntil: "networkidle" });
+            await page.fill('input#email', email);
+            await page.fill('input#password', password);
+            await page.click('button[type="submit"]');
+            await page.waitForURL(/dashboard/, { timeout: 15000 });
+          }
+
+          async function discoverId(page, listPath, hrefPrefix) {
+            await page.goto(`${base}${listPath}`, { waitUntil: "networkidle" });
+            await page.waitForTimeout(400);
+            const href = await page.evaluate((prefix) => {
+              const a = document.querySelector(`a[href^="${prefix}"]`);
+              return a ? a.getAttribute("href") : null;
+            }, hrefPrefix);
+            return href;
+          }
+
+          async function visit(page, path, results, errors) {
+            errors.length = 0;
+            let status = null;
+            try {
+              const resp = await page.goto(`${base}${path}`, { waitUntil: "networkidle", timeout: 20000 });
+              status = resp ? resp.status() : null;
+              await page.waitForTimeout(300);
+            } catch (e) {
+              results.push({ path, status: "NAV_ERROR", errors: [e.message] });
+              return;
+            }
+            results.push({ path, status, errors: [...errors] });
+          }
+
+          async function runPass(viewportName, viewport) {
+            console.log(`\n\n########## ${viewportName} (${viewport.width}x${viewport.height}) ##########`);
+            const browser = await chromium.launch();
+            const context = await browser.newContext({ viewport });
+            const page = await context.newPage();
+            const errors = [];
+            page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
+            page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
+
+            const results = [];
+
+            console.log("Logging in...");
+            await login(page);
+
+            for (const route of STATIC_ROUTES) {
+              await visit(page, route, results, errors);
+            }
+
+            // Discover and visit dynamic routes
+            const projectHref = await discoverId(page, "/projects", "/projects/");
+            const taskHref = await discoverId(page, "/tasks", "/tasks/");
+            const userHref = await discoverId(page, "/org/users", "/org/users/");
+            const teamHref = await discoverId(page, "/org/teams", "/org/teams/");
+            const kpiHref = await discoverId(page, "/kpis", "/kpis/");
+
+            console.log("Discovered IDs:", { projectHref, taskHref, userHref, teamHref, kpiHref });
+
+            if (projectHref) {
+              await visit(page, projectHref, results, errors);
+              await visit(page, `${projectHref}?tab=blockers`, results, errors);
+              await visit(page, `${projectHref}?tab=team`, results, errors);
+              await visit(page, `${projectHref}?tab=activity`, results, errors);
+              const pid = projectHref.split("/").pop();
+              await visit(page, `/dashboard/project/${pid}`, results, errors);
+            } else {
+              results.push({ path: "/projects/[id]", status: "NO_LINK_FOUND", errors: [] });
+            }
+            if (taskHref) {
+              await visit(page, taskHref, results, errors);
+            } else {
+              results.push({ path: "/tasks/[id]", status: "NO_LINK_FOUND", errors: [] });
+            }
+            if (userHref) {
+              await visit(page, userHref, results, errors);
+            } else {
+              results.push({ path: "/org/users/[id]", status: "NO_LINK_FOUND", errors: [] });
+            }
+            if (teamHref) {
+              await visit(page, teamHref, results, errors);
+              const tid = teamHref.split("/").pop();
+              await visit(page, `/dashboard/team/${tid}`, results, errors);
+            } else {
+              results.push({ path: "/org/teams/[id]", status: "NO_LINK_FOUND", errors: [] });
+            }
+            if (kpiHref) {
+              await visit(page, kpiHref, results, errors);
+            } else {
+              results.push({ path: "/kpis/[id]", status: "NO_LINK_FOUND", errors: [] });
+            }
+
+            await browser.close();
+            return results;
+          }
+
+          const desktopResults = await runPass("DESKTOP", { width: 1440, height: 900 });
+          const mobileResults = await runPass("MOBILE", { width: 390, height: 844 });
+
+          function report(name, results) {
+            console.log(`\n=== ${name} RESULTS ===`);
+            let failCount = 0;
+            for (const r of results) {
+              const ok = typeof r.status === "number" && r.status >= 200 && r.status < 400 && r.errors.length === 0;
+              if (!ok) failCount++;
+              const statusLabel = String(r.status).padEnd(12);
+              console.log(`${ok ? "OK  " : "FAIL"} ${statusLabel} ${r.path}`);
+              if (r.errors.length) {
+                for (const e of r.errors) console.log(`       console error: ${e}`);
+              }
+            }
+            return failCount;
+          }
+
+          const desktopFails = report("DESKTOP", desktopResults);
+          const mobileFails = report("MOBILE", mobileResults);
+
+          console.log(`\n\nTOTAL: ${desktopFails} desktop failures, ${mobileFails} mobile failures`);
+          if (desktopFails > 0 || mobileFails > 0) process.exit(1);
+          console.log("ALL ROUTES CLEAN");
+          EOF
+          node crawl.mjs

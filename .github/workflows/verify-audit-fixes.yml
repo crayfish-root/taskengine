@@ -1,0 +1,303 @@
+name: Redeploy and verify audit fixes
+
+# One-off: redeploys the existing "taskengine" Dokploy app (main now has the
+# 19 audit fixes) and then, against the live app:
+#   1. Runs a full route crawl at desktop + mobile viewports (regression check)
+#   2. Logs in as a STAFF-level account and confirms the closed authorization
+#      gaps actually reject unauthorized requests (esp. the self-escalation
+#      vector: STAFF could previously PATCH themselves to CIO)
+on:
+  workflow_dispatch:
+    inputs:
+      dokploy_url:
+        description: "Dokploy dashboard base URL"
+        required: true
+      dokploy_token:
+        description: "Dokploy API token"
+        required: true
+      admin_email:
+        description: "CIO/elevated demo account email"
+        required: false
+        default: "cio@taskengine.io"
+      staff_email:
+        description: "STAFF-level demo account email (should be rejected by the fixed routes)"
+        required: false
+        default: "staff.eng1@taskengine.io"
+      demo_password:
+        description: "Demo account password (same for all seeded accounts)"
+        required: false
+        default: "password123"
+
+jobs:
+  redeploy-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mask tokens
+        uses: actions/github-script@v7
+        env:
+          DOKPLOY_TOKEN: ${{ inputs.dokploy_token }}
+          DEMO_PASSWORD: ${{ inputs.demo_password }}
+        with:
+          script: |
+            core.setSecret(process.env.DOKPLOY_TOKEN);
+            core.setSecret(process.env.DEMO_PASSWORD);
+
+      - name: Redeploy application
+        id: deploy
+        env:
+          DOKPLOY_TOKEN: ${{ inputs.dokploy_token }}
+          DOKPLOY_URL_RAW: ${{ inputs.dokploy_url }}
+        run: |
+          set -euo pipefail
+          BASE="$DOKPLOY_URL_RAW"
+          if [[ "$BASE" != http://* && "$BASE" != https://* ]]; then BASE="https://$BASE"; fi
+          BASE="${BASE%/}"
+          API="$BASE/api"
+          call() {
+            local method="$1" path="$2" body="${3:-}"
+            if [ -n "$body" ]; then
+              curl -sS -X "$method" "$API/$path" -H "x-api-key: $DOKPLOY_TOKEN" -H "Content-Type: application/json" -d "$body"
+            else
+              curl -sS -X "$method" "$API/$path" -H "x-api-key: $DOKPLOY_TOKEN"
+            fi
+          }
+          check_err() {
+            if echo "$2" | jq -e 'type == "object" and has("code")' >/dev/null 2>&1; then echo "$1 failed: $2"; exit 1; fi
+          }
+
+          ALL=$(call GET project.all)
+          PROJECT=$(echo "$ALL" | jq -c '[.[] | select(.name=="taskengine")] | sort_by(.createdAt) | last')
+          APPLICATION_ID=$(echo "$PROJECT" | jq -r '.environments[0].applications[0].applicationId')
+          echo "applicationId=$APPLICATION_ID"
+
+          check_err "application.deploy" "$(call POST application.deploy "$(jq -n --arg id "$APPLICATION_ID" '{applicationId:$id, title:"Verify audit fixes redeploy"}')")"
+
+          for i in $(seq 1 60); do
+            DEPLOYS=$(call GET "deployment.allByType?id=$APPLICATION_ID&type=application")
+            STATUS=$(echo "$DEPLOYS" | jq -r 'if type=="array" then . else (.deployments // .data // []) end | sort_by(.createdAt) | last | .status // empty')
+            echo "deployment status: ${STATUS:-<none yet>}"
+            if [ "$STATUS" = "done" ]; then break; fi
+            if [ "$STATUS" = "error" ] || [ "$STATUS" = "cancelled" ]; then
+              DID=$(echo "$DEPLOYS" | jq -r 'if type=="array" then . else (.deployments // .data // []) end | sort_by(.createdAt) | last | .deploymentId // empty')
+              echo "Deployment failed: $STATUS"
+              if [ -n "$DID" ]; then call GET "deployment.readLogs?deploymentId=$DID&tail=300" | jq -r 'if type=="string" then . else tostring end'; fi
+              exit 1
+            fi
+            sleep 10
+          done
+
+          DOMAINS=$(call GET "domain.byApplicationId?applicationId=$APPLICATION_ID")
+          HOST=$(echo "$DOMAINS" | jq -r '.[0].host // empty')
+          echo "host=$HOST" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Playwright
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install playwright@1.48 >/dev/null 2>&1
+          npx playwright install --with-deps chromium >/dev/null 2>&1
+
+      - name: Route crawl (regression check)
+        env:
+          HOST: ${{ steps.deploy.outputs.host }}
+          DEMO_EMAIL: ${{ inputs.admin_email }}
+          DEMO_PASSWORD: ${{ inputs.demo_password }}
+        run: |
+          cat > crawl.mjs <<'EOF'
+          import { chromium } from "playwright";
+
+          const host = process.env.HOST;
+          const email = process.env.DEMO_EMAIL;
+          const password = process.env.DEMO_PASSWORD;
+          const base = `https://${host}`;
+
+          const STATIC_ROUTES = [
+            "/dashboard", "/dashboard/delays",
+            "/org", "/org/users", "/org/teams", "/org/departments",
+            "/projects", "/tasks", "/blockers",
+            "/kpis", "/updates", "/workflows",
+            "/leave", "/workload",
+            "/documents", "/notifications",
+          ];
+
+          async function login(page) {
+            await page.goto(`${base}/login`, { waitUntil: "networkidle" });
+            await page.fill('input#email', email);
+            await page.fill('input#password', password);
+            await page.click('button[type="submit"]');
+            await page.waitForURL(/dashboard/, { timeout: 15000 });
+          }
+
+          async function discoverId(page, listPath, hrefPrefix) {
+            await page.goto(`${base}${listPath}`, { waitUntil: "networkidle" });
+            await page.waitForTimeout(400);
+            const href = await page.evaluate((prefix) => {
+              const a = document.querySelector(`a[href^="${prefix}"]`);
+              return a ? a.getAttribute("href") : null;
+            }, hrefPrefix);
+            return href;
+          }
+
+          async function visit(page, path, results, errors) {
+            errors.length = 0;
+            let status = null;
+            try {
+              const resp = await page.goto(`${base}${path}`, { waitUntil: "networkidle", timeout: 20000 });
+              status = resp ? resp.status() : null;
+              await page.waitForTimeout(300);
+            } catch (e) {
+              results.push({ path, status: "NAV_ERROR", errors: [e.message] });
+              return;
+            }
+            results.push({ path, status, errors: [...errors] });
+          }
+
+          async function runPass(viewportName, viewport) {
+            console.log(`\n\n########## ${viewportName} (${viewport.width}x${viewport.height}) ##########`);
+            const browser = await chromium.launch();
+            const context = await browser.newContext({ viewport });
+            const page = await context.newPage();
+            const errors = [];
+            page.on("console", (m) => { if (m.type() === "error") errors.push(m.text().slice(0, 200)); });
+            page.on("pageerror", (e) => errors.push("PAGEERROR: " + e.message.slice(0, 200)));
+
+            const results = [];
+            console.log("Logging in...");
+            await login(page);
+
+            for (const route of STATIC_ROUTES) {
+              await visit(page, route, results, errors);
+            }
+
+            const projectHref = await discoverId(page, "/projects", "/projects/");
+            const taskHref = await discoverId(page, "/tasks", "/tasks/");
+            const userHref = await discoverId(page, "/org/users", "/org/users/");
+            const teamHref = await discoverId(page, "/org/teams", "/org/teams/");
+            const kpiHref = await discoverId(page, "/kpis", "/kpis/");
+            console.log("Discovered IDs:", { projectHref, taskHref, userHref, teamHref, kpiHref });
+
+            if (projectHref) {
+              await visit(page, projectHref, results, errors);
+              await visit(page, `${projectHref}?tab=blockers`, results, errors);
+              await visit(page, `${projectHref}?tab=team`, results, errors);
+              await visit(page, `${projectHref}?tab=activity`, results, errors);
+              const pid = projectHref.split("/").pop();
+              await visit(page, `/dashboard/project/${pid}`, results, errors);
+            }
+            if (taskHref) await visit(page, taskHref, results, errors);
+            if (userHref) await visit(page, userHref, results, errors);
+            if (teamHref) {
+              await visit(page, teamHref, results, errors);
+              const tid = teamHref.split("/").pop();
+              await visit(page, `/dashboard/team/${tid}`, results, errors);
+            }
+            if (kpiHref) await visit(page, kpiHref, results, errors);
+
+            await browser.close();
+            return results;
+          }
+
+          const desktopResults = await runPass("DESKTOP", { width: 1440, height: 900 });
+          const mobileResults = await runPass("MOBILE", { width: 390, height: 844 });
+
+          function report(name, results) {
+            console.log(`\n=== ${name} RESULTS ===`);
+            let failCount = 0;
+            for (const r of results) {
+              const ok = typeof r.status === "number" && r.status >= 200 && r.status < 400 && r.errors.length === 0;
+              if (!ok) failCount++;
+              console.log(`${ok ? "OK  " : "FAIL"} ${String(r.status).padEnd(12)} ${r.path}`);
+              if (r.errors.length) for (const e of r.errors) console.log(`       console error: ${e}`);
+            }
+            return failCount;
+          }
+
+          const desktopFails = report("DESKTOP", desktopResults);
+          const mobileFails = report("MOBILE", mobileResults);
+          console.log(`\n\nTOTAL: ${desktopFails} desktop failures, ${mobileFails} mobile failures`);
+          if (desktopFails > 0 || mobileFails > 0) process.exit(1);
+          console.log("ROUTE CRAWL CLEAN");
+          EOF
+          node crawl.mjs
+
+      - name: Verify authorization fixes reject a STAFF-level account
+        env:
+          HOST: ${{ steps.deploy.outputs.host }}
+          STAFF_EMAIL: ${{ inputs.staff_email }}
+          DEMO_PASSWORD: ${{ inputs.demo_password }}
+        run: |
+          cat > auth-check.mjs <<'EOF'
+          import { chromium } from "playwright";
+
+          const host = process.env.HOST;
+          const email = process.env.STAFF_EMAIL;
+          const password = process.env.DEMO_PASSWORD;
+          const base = `https://${host}`;
+
+          const browser = await chromium.launch();
+          const context = await browser.newContext();
+          const page = await context.newPage();
+
+          // Visit first so fetch() below is same-origin, then log in via the API directly —
+          // its response body carries the user's own id (userId), which the UI never exposes.
+          console.log("== Logging in as STAFF-level account ==");
+          await page.goto(`${base}/login`, { waitUntil: "networkidle" });
+          const loginResult = await page.evaluate(async ({ email, password }) => {
+            const res = await fetch("/api/auth/login", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email, password }),
+            });
+            const json = await res.json().catch(() => null);
+            return { status: res.status, json };
+          }, { email, password });
+          console.log("login result:", loginResult);
+          if (loginResult.status !== 200 || !loginResult.json?.userId) {
+            console.log("FAIL: could not log in as STAFF account");
+            process.exit(1);
+          }
+          const myId = loginResult.json.userId;
+
+          async function apiCall(method, path, body) {
+            return page.evaluate(async ({ method, path, body }) => {
+              const res = await fetch(path, {
+                method,
+                headers: { "Content-Type": "application/json" },
+                body: body ? JSON.stringify(body) : undefined,
+              });
+              let json = null;
+              try { json = await res.json(); } catch {}
+              return { status: res.status, body: json };
+            }, { method, path, body });
+          }
+
+          let failures = 0;
+          function expectForbidden(label, result) {
+            const ok = result.status === 401 || result.status === 403;
+            console.log(`${ok ? "OK  " : "FAIL"} ${label} -> status ${result.status} ${JSON.stringify(result.body)}`);
+            if (!ok) failures++;
+          }
+
+          // The most severe finding: a STAFF user could previously self-escalate to CIO.
+          const r = await apiCall("PATCH", `/api/org/users/${myId}`, { level: "CIO" });
+          expectForbidden("Self-escalation PATCH /api/org/users/:id {level: CIO}", r);
+
+          expectForbidden("POST /api/org/departments as STAFF", await apiCall("POST", "/api/org/departments", { name: "Rogue Department " + Date.now() }));
+          expectForbidden("POST /api/org/teams as STAFF", await apiCall("POST", "/api/org/teams", { name: "Rogue Team " + Date.now() }));
+          expectForbidden("POST /api/org/users as STAFF", await apiCall("POST", "/api/org/users", { name: "Rogue User", email: `rogue${Date.now()}@taskengine.io`, level: "STAFF", password: "password123" }));
+
+          await browser.close();
+
+          console.log(`\n\nTOTAL AUTH-CHECK FAILURES: ${failures}`);
+          if (failures > 0) process.exit(1);
+          console.log("AUTHORIZATION FIXES VERIFIED — unauthorized requests correctly rejected");
+          EOF
+          node auth-check.mjs
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-fix-verification
+          path: "*.png"
+          retention-days: 7
+          if-no-files-found: ignore

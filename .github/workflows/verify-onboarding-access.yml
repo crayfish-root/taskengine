@@ -1,0 +1,216 @@
+name: Redeploy and verify onboarding, reset, and document access
+
+# One-off: redeploys the taskengine Dokploy app (main now has invite-based
+# onboarding, admin password reset, and restricted document visibility) and
+# then exercises all three end-to-end against the live app:
+#   1. CIO invites a fresh account -> accept-invite activates it and logs in
+#   2. CIO generates a password-reset link for that account -> it works
+#   3. CIO uploads a restricted document -> the invited STAFF account can't
+#      see it (neither in the file endpoint nor the list), CIO still can
+on:
+  workflow_dispatch:
+    inputs:
+      dokploy_url:
+        description: "Dokploy dashboard base URL"
+        required: true
+      dokploy_token:
+        description: "Dokploy API token"
+        required: true
+      admin_email:
+        description: "CIO/elevated demo account email"
+        required: false
+        default: "cio@taskengine.io"
+      demo_password:
+        description: "Demo account password"
+        required: false
+        default: "password123"
+
+jobs:
+  redeploy-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mask tokens
+        uses: actions/github-script@v7
+        env:
+          DOKPLOY_TOKEN: ${{ inputs.dokploy_token }}
+          DEMO_PASSWORD: ${{ inputs.demo_password }}
+        with:
+          script: |
+            core.setSecret(process.env.DOKPLOY_TOKEN);
+            core.setSecret(process.env.DEMO_PASSWORD);
+
+      - name: Redeploy application
+        id: deploy
+        env:
+          DOKPLOY_TOKEN: ${{ inputs.dokploy_token }}
+          DOKPLOY_URL_RAW: ${{ inputs.dokploy_url }}
+        run: |
+          set -euo pipefail
+          BASE="$DOKPLOY_URL_RAW"
+          if [[ "$BASE" != http://* && "$BASE" != https://* ]]; then BASE="https://$BASE"; fi
+          BASE="${BASE%/}"
+          API="$BASE/api"
+          call() {
+            local method="$1" path="$2" body="${3:-}"
+            if [ -n "$body" ]; then
+              curl -sS -X "$method" "$API/$path" -H "x-api-key: $DOKPLOY_TOKEN" -H "Content-Type: application/json" -d "$body"
+            else
+              curl -sS -X "$method" "$API/$path" -H "x-api-key: $DOKPLOY_TOKEN"
+            fi
+          }
+          check_err() {
+            if echo "$2" | jq -e 'type == "object" and has("code")' >/dev/null 2>&1; then echo "$1 failed: $2"; exit 1; fi
+          }
+
+          ALL=$(call GET project.all)
+          PROJECT=$(echo "$ALL" | jq -c '[.[] | select(.name=="taskengine")] | sort_by(.createdAt) | last')
+          APPLICATION_ID=$(echo "$PROJECT" | jq -r '.environments[0].applications[0].applicationId')
+          echo "applicationId=$APPLICATION_ID"
+
+          check_err "application.deploy" "$(call POST application.deploy "$(jq -n --arg id "$APPLICATION_ID" '{applicationId:$id, title:"Verify onboarding/access redeploy"}')")"
+
+          for i in $(seq 1 60); do
+            DEPLOYS=$(call GET "deployment.allByType?id=$APPLICATION_ID&type=application")
+            STATUS=$(echo "$DEPLOYS" | jq -r 'if type=="array" then . else (.deployments // .data // []) end | sort_by(.createdAt) | last | .status // empty')
+            echo "deployment status: ${STATUS:-<none yet>}"
+            if [ "$STATUS" = "done" ]; then break; fi
+            if [ "$STATUS" = "error" ] || [ "$STATUS" = "cancelled" ]; then
+              DID=$(echo "$DEPLOYS" | jq -r 'if type=="array" then . else (.deployments // .data // []) end | sort_by(.createdAt) | last | .deploymentId // empty')
+              echo "Deployment failed: $STATUS"
+              if [ -n "$DID" ]; then call GET "deployment.readLogs?deploymentId=$DID&tail=300" | jq -r 'if type=="string" then . else tostring end'; fi
+              exit 1
+            fi
+            sleep 10
+          done
+
+          DOMAINS=$(call GET "domain.byApplicationId?applicationId=$APPLICATION_ID")
+          HOST=$(echo "$DOMAINS" | jq -r '.[0].host // empty')
+          echo "host=$HOST" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Playwright
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install playwright@1.48 >/dev/null 2>&1
+          npx playwright install --with-deps chromium >/dev/null 2>&1
+
+      - name: Exercise onboarding, reset, and restricted-document flows
+        env:
+          HOST: ${{ steps.deploy.outputs.host }}
+          ADMIN_EMAIL: ${{ inputs.admin_email }}
+          DEMO_PASSWORD: ${{ inputs.demo_password }}
+        run: |
+          cat > verify.mjs <<'EOF'
+          import { chromium } from "playwright";
+
+          const host = process.env.HOST;
+          const adminEmail = process.env.ADMIN_EMAIL;
+          const demoPassword = process.env.DEMO_PASSWORD;
+          const base = `https://${host}`;
+          const stamp = Date.now();
+          let failures = 0;
+
+          function check(label, ok, extra) {
+            console.log(`${ok ? "OK  " : "FAIL"} ${label}${extra ? " -> " + JSON.stringify(extra) : ""}`);
+            if (!ok) failures++;
+          }
+
+          async function apiCall(page, method, path, body) {
+            return page.evaluate(async ({ method, path, body }) => {
+              const res = await fetch(path, {
+                method,
+                headers: { "Content-Type": "application/json" },
+                body: body ? JSON.stringify(body) : undefined,
+              });
+              let json = null;
+              try { json = await res.json(); } catch {}
+              return { status: res.status, body: json };
+            }, { method, path, body });
+          }
+
+          async function loginViaApi(page, email, password) {
+            await page.goto(`${base}/login`, { waitUntil: "networkidle" });
+            return apiCall(page, "POST", "/api/auth/login", { email, password });
+          }
+
+          const browser = await chromium.launch();
+
+          // ---- 1. Admin logs in, invites a new person ----
+          const adminCtx = await browser.newContext();
+          const adminPage = await adminCtx.newPage();
+          const adminLogin = await loginViaApi(adminPage, adminEmail, demoPassword);
+          check("Admin login", adminLogin.status === 200, adminLogin);
+          const adminId = adminLogin.body?.userId;
+
+          const inviteEmail = `verify.invite.${stamp}@taskengine.io`;
+          const inviteRes = await apiCall(adminPage, "POST", "/api/org/users/invite", {
+            name: "Verify Invitee",
+            email: inviteEmail,
+            level: "STAFF",
+          });
+          check("Create invite", inviteRes.status === 201 && !!inviteRes.body?.token, inviteRes);
+          const inviteToken = inviteRes.body?.token;
+          const inviteeId = inviteRes.body?.user?.id;
+
+          // ---- 2. Invitee accepts the invite in a fresh, unauthenticated context ----
+          const inviteeCtx = await browser.newContext();
+          const inviteePage = await inviteeCtx.newPage();
+          await inviteePage.goto(`${base}/accept-invite?token=${inviteToken}`, { waitUntil: "networkidle" });
+          const inviteeCheck = await apiCall(inviteePage, "GET", `/api/auth/accept-invite?token=${inviteToken}`);
+          check("Invite token validates", inviteeCheck.status === 200 && inviteeCheck.body?.email === inviteEmail, inviteeCheck);
+
+          const inviteePassword = "verifyPass123!";
+          const acceptRes = await apiCall(inviteePage, "POST", "/api/auth/accept-invite", { token: inviteToken, password: inviteePassword });
+          check("Accept invite activates account", acceptRes.status === 200, acceptRes);
+
+          const dashResp = await inviteePage.goto(`${base}/dashboard`, { waitUntil: "networkidle" });
+          check("Invitee is logged in after accepting (lands on /dashboard, not /login)", inviteePage.url().includes("/dashboard"), { url: inviteePage.url(), status: dashResp?.status() });
+
+          // ---- 3. Admin resets the invitee's password; the new password logs them in ----
+          const resetRes = await apiCall(adminPage, "POST", `/api/org/users/${inviteeId}/reset-password`, undefined);
+          check("Admin generates reset link", resetRes.status === 200 && !!resetRes.body?.token, resetRes);
+          const resetToken = resetRes.body?.token;
+
+          const resetCtx = await browser.newContext();
+          const resetPage = await resetCtx.newPage();
+          await resetPage.goto(`${base}/reset-password?token=${resetToken}`, { waitUntil: "networkidle" });
+          const newPassword = "verifyPassNew456!";
+          const resetSubmit = await apiCall(resetPage, "POST", "/api/auth/reset-password", { token: resetToken, password: newPassword });
+          check("Reset-password sets new password", resetSubmit.status === 200, resetSubmit);
+
+          const reloginCtx = await browser.newContext();
+          const reloginPage = await reloginCtx.newPage();
+          const relogin = await loginViaApi(reloginPage, inviteEmail, newPassword);
+          check("Login with the new password works", relogin.status === 200, relogin);
+          const oldPasswordAttempt = await loginViaApi(reloginPage, inviteEmail, inviteePassword);
+          check("Old password no longer works", oldPasswordAttempt.status === 401, oldPasswordAttempt);
+
+          // ---- 4. Admin uploads a restricted, unattached document ----
+          const tinyPngDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+          const uploadRes = await apiCall(adminPage, "POST", "/api/documents", {
+            name: `restricted-verify-${stamp}.png`,
+            mimeType: "image/png",
+            size: 95,
+            dataUrl: tinyPngDataUrl,
+            restricted: true,
+          });
+          check("Admin uploads restricted document", uploadRes.status === 201 && uploadRes.body?.document?.restricted === true, uploadRes);
+          const docId = uploadRes.body?.document?.id;
+
+          // ---- 5. The invitee (unrelated STAFF account) can't see it; admin still can ----
+          const inviteeFileRes = await apiCall(inviteePage, "GET", `/api/documents/${docId}/file`);
+          check("Unrelated STAFF user is blocked from the restricted file", inviteeFileRes.status === 403, inviteeFileRes);
+
+          const inviteeListRes = await apiCall(inviteePage, "GET", "/api/documents?scope=unattached");
+          const leaked = (inviteeListRes.body?.documents ?? []).some((d) => d.id === docId);
+          check("Restricted document is absent from the STAFF user's document list", !leaked, { leaked });
+
+          const adminFileRes = await apiCall(adminPage, "GET", `/api/documents/${docId}/file`);
+          check("Admin (elevated) can still access the restricted file", adminFileRes.status === 200 || adminFileRes.status === 307 || adminFileRes.status === 302, adminFileRes);
+
+          await browser.close();
+
+          console.log(`\n\nTOTAL FAILURES: ${failures}`);
+          if (failures > 0) process.exit(1);
+          console.log("ONBOARDING / RESET / RESTRICTED-DOCUMENT FLOWS VERIFIED");
+          EOF
+          node verify.mjs

@@ -1,0 +1,17 @@
+# Local Postgres for development — matches production (both run Postgres,
+# no dev/prod drift). Start with: docker compose up -d
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: taskengine
+      POSTGRES_PASSWORD: taskengine
+      POSTGRES_DB: taskengine
+    ports:
+      - "5432:5432"
+    volumes:
+      - taskengine-db:/var/lib/postgresql/data
+
+volumes:
+  taskengine-db:

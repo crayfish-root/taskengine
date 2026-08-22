@@ -2,15 +2,16 @@
 
 A single, org-wide task and project management system: the place everyone — from the CIO down to individual contributors — goes to see what's being worked on, who owns it, what's blocked, and who's behind.
 
-Built as a Next.js (App Router) + TypeScript + Prisma/SQLite application with a restrained, high-clarity interface: quiet chrome, real data given the most visual weight, one accent color used deliberately.
+Built as a Next.js (App Router) + TypeScript + Prisma/Postgres application with a restrained, high-clarity interface: quiet chrome, real data given the most visual weight, one accent color used deliberately.
 
 ## Getting started
 
 ```bash
 npm install
 cp .env.example .env
-npm run db:push    # create the SQLite schema at prisma/dev.db
-npm run db:seed     # populate a realistic 45-person org with projects, tasks, KPIs, leave, etc.
+docker compose up -d   # local Postgres — matches production, no dev/prod drift
+npm run db:push          # apply the schema
+npm run db:seed          # populate a realistic 45-person org with projects, tasks, KPIs, leave, etc.
 npm run dev
 ```
 
@@ -52,7 +53,7 @@ Other useful scripts: `npm run db:studio` (Prisma Studio, browse the raw data), 
 ## Architecture
 
 - **Next.js 16 (App Router, Turbopack)**, React 19, TypeScript.
-- **Prisma + SQLite** for data — see `prisma/schema.prisma` for the full model (users, departments, teams, projects, tasks, assignments, blockers, KPIs, workflows, scheduled updates, leave, documents, comments, notifications, activity log).
+- **Prisma + Postgres** for data — see `prisma/schema.prisma` for the full model (users, departments, teams, projects, tasks, assignments, blockers, KPIs, workflows, scheduled updates, leave, documents, comments, notifications, activity log).
 - **Custom auth**: bcrypt-hashed passwords, signed JWT session cookie (see `src/lib/auth.ts`) — no third-party auth dependency.
 - A small shared **design system** under `src/components/ui/` (cards, badges, tabs, modals, avatars, status pills, etc.) that every feature module builds on, so the whole app reads as one product rather than six.
 - `prisma/seed-fragments/*.ts` — one idempotent seed module per feature area, composed by `prisma/seed.ts`.

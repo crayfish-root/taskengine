@@ -5,8 +5,9 @@
 [phases.setup]
 nixPkgs = ["nodejs_22"]
 
-# The container's SQLite file is ephemeral — each boot gets a fresh,
-# freshly-seeded demo dataset. db:push and db:seed are both idempotent, so
-# this is safe to run on every start/restart.
+# Postgres is persistent (unlike the earlier SQLite-in-container setup), so
+# db:push/db:seed only do real work on first boot — both are idempotent, so
+# running them on every start/restart is still safe and just a fast no-op
+# once the schema and demo org already exist.
 [start]
 cmd = "npm run db:push && npm run db:seed && npm run start"

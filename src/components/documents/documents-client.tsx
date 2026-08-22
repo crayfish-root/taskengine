@@ -216,48 +216,50 @@ export function DocumentsClient({
                   const Icon = CATEGORY_ICONS[cat];
                   const canDelete = doc.uploadedBy.id === currentUser.id || ["CIO", "DIRECTOR", "HEAD_OF_DEPARTMENT"].includes(currentUser.level);
                   return (
-                    <div key={doc.id} className="flex items-center gap-3 px-3 py-3">
-                      {cat === "image" ? (
-                        <img
-                          src={doc.dataUrl}
-                          alt=""
-                          className="h-10 w-10 shrink-0 rounded-[8px] object-cover border border-border-soft"
-                        />
-                      ) : (
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] bg-black/[0.04] dark:bg-white/[0.06]">
-                          <Icon className="h-[18px] w-[18px] text-muted" strokeWidth={1.75} />
-                        </div>
-                      )}
+                    <div key={doc.id} className="flex flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:gap-3">
+                      <div className="flex min-w-0 flex-1 items-center gap-3">
+                        {cat === "image" ? (
+                          <img
+                            src={doc.dataUrl}
+                            alt=""
+                            className="h-10 w-10 shrink-0 rounded-[8px] object-cover border border-border-soft"
+                          />
+                        ) : (
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[8px] bg-black/[0.04] dark:bg-white/[0.06]">
+                            <Icon className="h-[18px] w-[18px] text-muted" strokeWidth={1.75} />
+                          </div>
+                        )}
 
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13.5px] font-medium text-foreground">{doc.name}</p>
-                        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-muted">
-                          <span>{formatFileSize(doc.size)}</span>
-                          <span className="text-muted-2">·</span>
-                          <span className="inline-flex items-center gap-1">
-                            <Avatar name={doc.uploadedBy.name} color={doc.uploadedBy.avatarColor} emoji={doc.uploadedBy.avatarEmoji} size="xs" />
-                            {doc.uploadedBy.name}
-                          </span>
-                          <span className="text-muted-2">·</span>
-                          <span>{relativeTime(doc.createdAt)}</span>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13.5px] font-medium text-foreground">{doc.name}</p>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] text-muted">
+                            <span>{formatFileSize(doc.size)}</span>
+                            <span className="text-muted-2">·</span>
+                            <span className="inline-flex items-center gap-1">
+                              <Avatar name={doc.uploadedBy.name} color={doc.uploadedBy.avatarColor} emoji={doc.uploadedBy.avatarEmoji} size="xs" />
+                              {doc.uploadedBy.name}
+                            </span>
+                            <span className="text-muted-2">·</span>
+                            <span>{relativeTime(doc.createdAt)}</span>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="shrink-0 flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:flex-nowrap">
                         {doc.project && (
                           <Link
                             href={`/projects/${doc.project.id}`}
-                            className="inline-flex items-center gap-1 rounded-full bg-black/[0.05] dark:bg-white/[0.08] px-2.5 py-1 text-[11.5px] font-medium text-foreground hover:bg-accent-soft hover:text-accent transition-colors"
+                            className="inline-flex max-w-[160px] items-center gap-1 rounded-full bg-black/[0.05] dark:bg-white/[0.08] px-2.5 py-1 text-[11.5px] font-medium text-foreground hover:bg-accent-soft hover:text-accent transition-colors"
                           >
-                            <FolderKanban className="h-3 w-3" /> {doc.project.name}
+                            <FolderKanban className="h-3 w-3 shrink-0" /> <span className="truncate">{doc.project.name}</span>
                           </Link>
                         )}
                         {doc.task && (
                           <Link
                             href={`/tasks/${doc.task.id}`}
-                            className="inline-flex items-center gap-1 rounded-full bg-black/[0.05] dark:bg-white/[0.08] px-2.5 py-1 text-[11.5px] font-medium text-foreground hover:bg-accent-soft hover:text-accent transition-colors"
+                            className="inline-flex max-w-[160px] items-center gap-1 rounded-full bg-black/[0.05] dark:bg-white/[0.08] px-2.5 py-1 text-[11.5px] font-medium text-foreground hover:bg-accent-soft hover:text-accent transition-colors"
                           >
-                            <ListChecks className="h-3 w-3" /> {doc.task.title}
+                            <ListChecks className="h-3 w-3 shrink-0" /> <span className="truncate">{doc.task.title}</span>
                           </Link>
                         )}
                         {!doc.project && !doc.task && (
@@ -268,7 +270,7 @@ export function DocumentsClient({
                         <a
                           href={doc.dataUrl}
                           download={doc.name}
-                          className="rounded-full p-1.5 text-muted hover:bg-black/[0.05] dark:hover:bg-white/[0.08] hover:text-foreground transition-colors"
+                          className="shrink-0 rounded-full p-1.5 text-muted hover:bg-black/[0.05] dark:hover:bg-white/[0.08] hover:text-foreground transition-colors"
                           title="Download"
                         >
                           <Download className="h-3.5 w-3.5" />
@@ -277,7 +279,7 @@ export function DocumentsClient({
                           <button
                             onClick={() => handleDelete(doc.id)}
                             disabled={deletingId === doc.id}
-                            className="rounded-full p-1.5 text-muted hover:bg-danger-soft hover:text-danger transition-colors"
+                            className="shrink-0 rounded-full p-1.5 text-muted hover:bg-danger-soft hover:text-danger transition-colors"
                             title="Delete"
                           >
                             {deletingId === doc.id ? (

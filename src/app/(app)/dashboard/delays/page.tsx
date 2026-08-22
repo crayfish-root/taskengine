@@ -136,7 +136,7 @@ export default async function DelaysPage() {
         description="Every at-risk or delayed project, overdue task, and high-severity blocker across the company, prioritized by severity and age."
       />
 
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard label="At risk / delayed projects" value={atRiskProjects.length} icon={Flame} tone={atRiskProjects.length > 0 ? "danger" : "neutral"} />
         <StatCard label="Overdue tasks" value={overdueTasks.length} icon={AlertTriangle} tone={overdueTasks.length > 0 ? "warning" : "neutral"} />
         <StatCard label="High-severity blockers" value={criticalBlockers.length} icon={ShieldAlert} tone={criticalBlockers.length > 0 ? "danger" : "neutral"} />

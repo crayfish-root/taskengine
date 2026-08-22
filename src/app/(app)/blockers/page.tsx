@@ -100,7 +100,7 @@ export default async function BlockersPage({
         actions={<AddBlockerButton ownerOptions={people} projectOptions={projects} />}
       />
 
-      <div className="mb-6 grid grid-cols-3 gap-4">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card>
           <CardContent className="p-4">
             <p className="text-[11px] font-medium uppercase tracking-[0.05em] text-muted-2">Open blockers</p>

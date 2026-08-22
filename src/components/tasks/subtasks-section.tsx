@@ -38,7 +38,7 @@ export function SubtasksSection({
       {subtasks.map((s) => (
         <div
           key={s.id}
-          className="flex items-center gap-3 rounded-[10px] border border-border-soft px-3 py-2"
+          className="flex flex-col gap-2 rounded-[10px] border border-border-soft px-3 py-2 sm:flex-row sm:items-center sm:gap-3"
         >
           <Link href={`/tasks/${s.id}`} className="min-w-0 flex-1">
             <p className={cn("truncate text-[13px] font-medium hover:text-accent transition-colors")}>{s.title}</p>
@@ -50,10 +50,12 @@ export function SubtasksSection({
               )}
             </div>
           </Link>
-          {s.assignments.length > 0 && (
-            <AvatarStack users={s.assignments.map((a) => a.user)} max={3} size="xs" />
-          )}
-          <QuickStatus taskId={s.id} status={s.status} size="sm" />
+          <div className="flex shrink-0 items-center gap-3">
+            {s.assignments.length > 0 && (
+              <AvatarStack users={s.assignments.map((a) => a.user)} max={3} size="xs" />
+            )}
+            <QuickStatus taskId={s.id} status={s.status} size="sm" />
+          </div>
         </div>
       ))}
       <Button size="sm" variant="ghost" onClick={() => setOpen(true)} className="mt-1">

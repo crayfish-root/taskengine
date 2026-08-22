@@ -132,7 +132,7 @@ export function CreateProjectModal({
           <Label>Description</Label>
           <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
         </FieldGroup>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <FieldGroup>
             <Label>Status</Label>
             <Select value={status} onChange={(e) => setStatus(e.target.value)}>

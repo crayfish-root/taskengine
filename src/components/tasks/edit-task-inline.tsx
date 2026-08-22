@@ -85,7 +85,7 @@ export function EditTaskInline({
         <Label>Description</Label>
         <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} />
       </FieldGroup>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <FieldGroup>
           <Label>Priority</Label>
           <Select value={priority} onChange={(e) => setPriority(e.target.value)}>

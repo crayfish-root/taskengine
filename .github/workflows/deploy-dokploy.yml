@@ -1,0 +1,149 @@
+name: Deploy to Dokploy
+
+# One-off manual deploy to an existing Dokploy instance: creates a project +
+# application via Dokploy's REST API, points it at this repo (nixpacks
+# build), sets env vars, and triggers a deploy. The API token is supplied
+# per-run as a workflow_dispatch input — never stored as a repo secret.
+on:
+  workflow_dispatch:
+    inputs:
+      dokploy_url:
+        description: "Dokploy dashboard base URL (e.g. https://panel.thecrayfish.tech)"
+        required: true
+      dokploy_token:
+        description: "Dokploy API token (Settings > API Keys)"
+        required: true
+      git_branch:
+        description: "Branch to deploy"
+        required: false
+        default: "main"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mask token
+        uses: actions/github-script@v7
+        env:
+          DOKPLOY_TOKEN: ${{ inputs.dokploy_token }}
+        with:
+          script: core.setSecret(process.env.DOKPLOY_TOKEN)
+
+      - name: Create project, application, and deploy
+        id: deploy
+        env:
+          DOKPLOY_TOKEN: ${{ inputs.dokploy_token }}
+          DOKPLOY_URL_RAW: ${{ inputs.dokploy_url }}
+          GIT_BRANCH: ${{ inputs.git_branch }}
+        run: |
+          set -euo pipefail
+
+          # Normalize base URL: allow a bare hostname or a full URL, strip trailing slash.
+          BASE="$DOKPLOY_URL_RAW"
+          if [[ "$BASE" != http://* && "$BASE" != https://* ]]; then
+            BASE="https://$BASE"
+          fi
+          BASE="${BASE%/}"
+          API="$BASE/api"
+
+          H_AUTH="x-api-key: $DOKPLOY_TOKEN"
+          H_JSON="Content-Type: application/json"
+
+          call() {
+            # call METHOD PATH [JSON_BODY]
+            local method="$1" path="$2" body="${3:-}"
+            if [ -n "$body" ]; then
+              curl -sS -X "$method" "$API/$path" -H "$H_AUTH" -H "$H_JSON" -d "$body"
+            else
+              curl -sS -X "$method" "$API/$path" -H "$H_AUTH"
+            fi
+          }
+
+          # Dokploy error responses are {code, message, issues}. Most mutation
+          # endpoints here (saveGitProvider, saveBuildType, saveEnvironment,
+          # deploy) just return `true` on success, so check for the error
+          # shape rather than expecting a particular success field.
+          check_err() {
+            local label="$1" resp="$2"
+            if echo "$resp" | jq -e 'type == "object" and has("code")' >/dev/null 2>&1; then
+              echo "$label failed: $resp"
+              exit 1
+            fi
+          }
+
+          echo "== Creating project =="
+          PROJECT_RESP=$(call POST project.create '{"name":"taskengine","description":"Enterprise task management app"}')
+          check_err "project.create" "$PROJECT_RESP"
+          ENVIRONMENT_ID=$(echo "$PROJECT_RESP" | jq -r '.environment.environmentId // empty')
+          if [ -z "$ENVIRONMENT_ID" ]; then echo "project.create: no environmentId in response: $PROJECT_RESP"; exit 1; fi
+
+          echo "== Creating application =="
+          APP_JSON=$(jq -n --arg envId "$ENVIRONMENT_ID" '{name:"taskengine", appName:"taskengine", environmentId:$envId}')
+          APP_RESP=$(call POST application.create "$APP_JSON")
+          check_err "application.create" "$APP_RESP"
+          APPLICATION_ID=$(echo "$APP_RESP" | jq -r '.applicationId // empty')
+          if [ -z "$APPLICATION_ID" ]; then echo "application.create: no applicationId in response: $APP_RESP"; exit 1; fi
+          echo "application_id=$APPLICATION_ID" >> "$GITHUB_OUTPUT"
+
+          echo "== Pointing at git repo =="
+          GIT_JSON=$(jq -n --arg id "$APPLICATION_ID" --arg branch "$GIT_BRANCH" \
+            '{applicationId:$id, customGitUrl:"https://github.com/crayfish-root/taskengine.git", customGitBranch:$branch, customGitBuildPath:"/", watchPaths:null}')
+          check_err "saveGitProvider" "$(call POST application.saveGitProvider "$GIT_JSON")"
+
+          echo "== Setting build type (nixpacks) =="
+          BUILD_JSON=$(jq -n --arg id "$APPLICATION_ID" \
+            '{applicationId:$id, buildType:"nixpacks", dockerfile:null, dockerContextPath:null, dockerBuildStage:null, herokuVersion:null, railpackVersion:null}')
+          check_err "saveBuildType" "$(call POST application.saveBuildType "$BUILD_JSON")"
+
+          echo "== Setting environment variables =="
+          SESSION_SECRET=$(openssl rand -hex 32)
+          ENV_STRING=$(printf 'DATABASE_URL=file:./dev.db\nSESSION_SECRET=%s\n' "$SESSION_SECRET")
+          ENV_JSON=$(jq -n --arg id "$APPLICATION_ID" --arg env "$ENV_STRING" \
+            '{applicationId:$id, env:$env, buildArgs:null, buildSecrets:null, createEnvFile:true}')
+          check_err "saveEnvironment" "$(call POST application.saveEnvironment "$ENV_JSON")"
+
+          echo "== Generating and creating domain =="
+          DOMAIN_RESP=$(call POST domain.generateDomain '{"appName":"taskengine"}')
+          check_err "domain.generateDomain" "$DOMAIN_RESP"
+          HOST=$(echo "$DOMAIN_RESP" | jq -r 'if type=="string" then . else (.domain // .host // empty) end')
+          if [ -z "$HOST" ] || [ "$HOST" = "null" ]; then echo "generateDomain: no host in response: $DOMAIN_RESP"; exit 1; fi
+          echo "host=$HOST" >> "$GITHUB_OUTPUT"
+
+          DOMAIN_JSON=$(jq -n --arg host "$HOST" --arg id "$APPLICATION_ID" \
+            '{host:$host, port:3000, https:true, certificateType:"letsencrypt", applicationId:$id, domainType:"application"}')
+          check_err "domain.create" "$(call POST domain.create "$DOMAIN_JSON")"
+
+          echo "== Triggering deploy =="
+          DEPLOY_JSON=$(jq -n --arg id "$APPLICATION_ID" '{applicationId:$id, title:"Initial deploy"}')
+          check_err "application.deploy" "$(call POST application.deploy "$DEPLOY_JSON")"
+
+          echo "== Waiting for deployment to finish =="
+          for i in $(seq 1 60); do
+            DEPLOYS=$(call GET "deployment.allByType?id=$APPLICATION_ID&type=application")
+            STATUS=$(echo "$DEPLOYS" | jq -r 'if type=="array" then . else (.deployments // .data // []) end | sort_by(.createdAt) | last | .status // empty')
+            echo "deployment status: ${STATUS:-<none yet>}"
+            if [ "$STATUS" = "done" ]; then break; fi
+            if [ "$STATUS" = "error" ] || [ "$STATUS" = "cancelled" ]; then
+              echo "Deployment failed with status: $STATUS"; exit 1
+            fi
+            sleep 10
+          done
+
+          echo "### Deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "- URL: https://$HOST" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke test
+        env:
+          HOST: ${{ steps.deploy.outputs.host }}
+        run: |
+          set -e
+          for i in $(seq 1 30); do
+            CODE=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 8 "https://$HOST/login" || echo 000)
+            if [ "$CODE" = "200" ]; then
+              echo "App is live: https://$HOST/login (HTTP $CODE)"
+              exit 0
+            fi
+            echo "waiting... last code $CODE"
+            sleep 10
+          done
+          echo "App did not respond 200 in time"; exit 1

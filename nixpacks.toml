@@ -1,0 +1,6 @@
+# Overrides only the start phase (setup/install/build stay on Nixpacks'
+# default Node/Next.js detection). The container's SQLite file is ephemeral —
+# each boot gets a fresh, freshly-seeded demo dataset. db:push and db:seed
+# are both idempotent, so this is safe to run on every start/restart.
+[start]
+cmd = "npm run db:push && npm run db:seed && npm run start"

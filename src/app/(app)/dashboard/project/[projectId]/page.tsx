@@ -99,14 +99,17 @@ export default async function ProjectDashboardPage({ params }: { params: Promise
   // Burn-up trend from real status-change history, when it exists.
   let trendData: TrendPoint[] = [];
   if (statusEvents.length > 0) {
-    const dayKey = (d: Date) => format(d, "MMM d");
-    const cumulative = new Map<string, number>();
+    const sortKey = (d: Date) => format(d, "yyyy-MM-dd");
+    const cumulative = new Map<string, { label: string; done: number }>();
     let running = 0;
     for (const e of statusEvents) {
       running++;
-      cumulative.set(dayKey(e.createdAt), running);
+      const key = sortKey(e.createdAt);
+      cumulative.set(key, { label: format(e.createdAt, "MMM d"), done: running });
     }
-    trendData = Array.from(cumulative.entries()).map(([date, done]) => ({ date, done, total: totalCount }));
+    trendData = Array.from(cumulative.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, { label, done }]) => ({ date: label, done, total: totalCount }));
   }
 
   return (

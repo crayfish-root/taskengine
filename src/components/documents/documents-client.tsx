@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -75,6 +75,9 @@ export function DocumentsClient({
   const [uploaderId, setUploaderId] = useState("ALL");
   const [scope, setScope] = useState<"ALL" | "project" | "task" | "unattached">("ALL");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [fetchedDocuments, setFetchedDocuments] = useState<DocumentRow[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const requestId = useRef(0);
 
   const uploaders = useMemo(() => {
     const map = new Map<string, DocumentUser>();
@@ -82,18 +85,42 @@ export function DocumentsClient({
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [initialDocuments]);
 
+  const hasActiveFilter = search.trim() !== "" || uploaderId !== "ALL" || scope !== "ALL";
+  const documents = hasActiveFilter ? fetchedDocuments ?? initialDocuments : initialDocuments;
+  const isSearching = hasActiveFilter && searching;
+
+  // Search and filters (other than category, which is client-derived) are served from
+  // the API so results aren't limited to the first 500 documents in the initial snapshot.
+  useEffect(() => {
+    if (!hasActiveFilter) return;
+    const q = search.trim();
+    const id = ++requestId.current;
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const params = new URLSearchParams();
+        if (q) params.set("q", q);
+        if (uploaderId !== "ALL") params.set("uploaderId", uploaderId);
+        if (scope !== "ALL") params.set("scope", scope);
+        const res = await fetch(`/api/documents?${params.toString()}`);
+        if (!res.ok) throw new Error("Search failed");
+        const data = await res.json();
+        if (id === requestId.current) setFetchedDocuments(data.documents ?? []);
+      } catch {
+        // keep showing the previous results on failure
+      } finally {
+        if (id === requestId.current) setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search, uploaderId, scope, hasActiveFilter]);
+
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return initialDocuments.filter((d) => {
-      if (q && !d.name.toLowerCase().includes(q)) return false;
+    return documents.filter((d) => {
       if (category !== "ALL" && categorizeMime(d.mimeType) !== category) return false;
-      if (uploaderId !== "ALL" && d.uploadedBy.id !== uploaderId) return false;
-      if (scope === "project" && !d.project) return false;
-      if (scope === "task" && !d.task) return false;
-      if (scope === "unattached" && (d.project || d.task)) return false;
       return true;
     });
-  }, [initialDocuments, search, category, uploaderId, scope]);
+  }, [documents, category]);
 
   async function handleDelete(id: string) {
     if (!window.confirm("Remove this document? This can't be undone.")) return;
@@ -134,7 +161,11 @@ export function DocumentsClient({
         <div>
           <div className="mb-5 flex flex-wrap items-center gap-2">
             <div className="relative flex-1 min-w-[200px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-2" />
+              {isSearching ? (
+                <Loader2 className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-2 animate-spin" />
+              ) : (
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-2" />
+              )}
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}

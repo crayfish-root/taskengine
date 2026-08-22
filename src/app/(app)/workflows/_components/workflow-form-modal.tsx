@@ -94,8 +94,14 @@ function WorkflowForm({
       setError("Add at least one status.");
       return;
     }
-    setSaving(true);
-    setError(null);
+    if (!name.trim()) {
+      setError("Give the workflow a name.");
+      return;
+    }
+    if (statuses.some((s) => !s.label.trim())) {
+      setError("Every status needs a label.");
+      return;
+    }
     const payload = {
       name,
       description: description || undefined,
@@ -108,6 +114,17 @@ function WorkflowForm({
         isDelayFlag: s.isDelayFlag,
       })),
     };
+    const keys = payload.statuses.map((s) => s.key);
+    if (keys.some((k) => !k)) {
+      setError("Every status needs a key.");
+      return;
+    }
+    if (new Set(keys).size !== keys.length) {
+      setError("Status keys must be unique — two statuses share the same key.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
     const res = await fetch(initial.id ? `/api/workflows/${initial.id}` : "/api/workflows", {
       method: initial.id ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
@@ -160,11 +177,13 @@ function WorkflowForm({
                 <div className="flex-1 grid grid-cols-2 gap-2">
                   <Input
                     placeholder="Label"
+                    required
                     value={s.label}
                     onChange={(e) => updateStatus(s._localId, { label: e.target.value, key: s.key || slugify(e.target.value) })}
                   />
                   <Input
                     placeholder="key"
+                    required
                     value={s.key}
                     onChange={(e) => updateStatus(s._localId, { key: e.target.value })}
                     className="font-mono text-[12.5px]"

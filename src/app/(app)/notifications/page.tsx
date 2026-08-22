@@ -49,7 +49,9 @@ export default async function NotificationsPage({
     groups.set(key, [...(groups.get(key) ?? []), n]);
   }
 
-  const totalUnread = await prisma.notification.count({ where: { userId: user.id, read: false } });
+  const totalUnread = await prisma.notification.count({
+    where: { userId: user.id, read: false, ...(typeFilter ? { type: typeFilter } : {}) },
+  });
 
   return (
     <div>
@@ -60,7 +62,7 @@ export default async function NotificationsPage({
         actions={
           <div className="flex items-center gap-2">
             <TypeFilterSelect current={typeFilter ?? "ALL"} />
-            <MarkAllReadButton hasUnread={totalUnread > 0} />
+            <MarkAllReadButton hasUnread={totalUnread > 0} type={typeFilter} />
           </div>
         }
       />

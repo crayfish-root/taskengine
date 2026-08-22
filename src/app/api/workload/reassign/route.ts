@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { applyReassignment } from "@/lib/auto-assign";
+import { isInManagementChain, ELEVATED_LEVELS } from "@/lib/org";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -25,6 +26,12 @@ export async function POST(req: NextRequest) {
 
   const newUser = await prisma.user.findUnique({ where: { id: newUserId }, select: { id: true, active: true } });
   if (!newUser || !newUser.active) return NextResponse.json({ error: "Replacement user not found" }, { status: 404 });
+
+  const allowed =
+    ELEVATED_LEVELS.has(user.level) ||
+    user.id === assignment.userId ||
+    (await isInManagementChain(user.id, assignment.userId));
+  if (!allowed) return NextResponse.json({ error: "Not authorized" }, { status: 403 });
 
   const result = await applyReassignment(assignmentId, newUserId, prisma);
   return NextResponse.json({ ok: true, assignment: result });

@@ -18,12 +18,20 @@ export function BlockerStatusMenu({ blockerId, status }: { blockerId: string; st
   function apply(next: string) {
     if (next === status) return;
     startTransition(async () => {
-      await fetch(`/api/blockers/${blockerId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: next }),
-      });
-      router.refresh();
+      try {
+        const res = await fetch(`/api/blockers/${blockerId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: next }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? "Could not update blocker status");
+        }
+        router.refresh();
+      } catch (e) {
+        window.alert(e instanceof Error ? e.message : "Could not update blocker status");
+      }
     });
   }
 

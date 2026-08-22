@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
-import { getAllReportIds } from "@/lib/org";
+import { getAllReportIds, ELEVATED_LEVELS } from "@/lib/org";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -54,6 +54,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  if (!ELEVATED_LEVELS.has(user.level)) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
   const { id } = await params;
 
   const body = await req.json().catch(() => null);
@@ -108,6 +111,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  if (!ELEVATED_LEVELS.has(user.level)) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
   const { id } = await params;
 
   const existing = await prisma.user.findUnique({ where: { id } });

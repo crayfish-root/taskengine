@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { ELEVATED_LEVELS } from "@/lib/org";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -53,6 +54,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const existing = await prisma.kpi.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (existing.ownerId !== user.id && !ELEVATED_LEVELS.has(user.level)) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
 
   const kpi = await prisma.kpi.update({
     where: { id },
@@ -79,6 +83,9 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
 
   const existing = await prisma.kpi.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (existing.ownerId !== user.id && !ELEVATED_LEVELS.has(user.level)) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
 
   await prisma.kpi.delete({ where: { id } });
   return NextResponse.json({ ok: true });

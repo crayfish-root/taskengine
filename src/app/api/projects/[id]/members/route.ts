@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { canManageProject } from "@/lib/project-permissions";
 
 const bodySchema = z.object({ userId: z.string().min(1), role: z.string().trim().max(60).optional() });
 
@@ -12,6 +13,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { id } = await params;
   const parsed = bodySchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+
+  if (!(await canManageProject(user.id, id))) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
 
   const member = await prisma.projectMember.upsert({
     where: { projectId_userId: { projectId: id, userId: parsed.data.userId } },
@@ -47,6 +52,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { id } = await params;
   const userId = req.nextUrl.searchParams.get("userId");
   if (!userId) return NextResponse.json({ error: "userId required" }, { status: 400 });
+
+  if (!(await canManageProject(user.id, id))) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
 
   await prisma.projectMember.deleteMany({ where: { projectId: id, userId } });
   return NextResponse.json({ ok: true });

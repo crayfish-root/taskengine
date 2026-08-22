@@ -1,5 +1,8 @@
 import { prisma } from "./prisma";
 
+/** Org levels that can manage org structure, escalate/moderate, and override ownership checks. */
+export const ELEVATED_LEVELS = new Set(["CIO", "DIRECTOR", "HEAD_OF_DEPARTMENT"]);
+
 /** Returns the chain of managers above a user, starting with their direct manager. */
 export async function getManagerChain(userId: string) {
   const chain: { id: string; name: string; level: string }[] = [];

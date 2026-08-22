@@ -46,37 +46,45 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   const data = parsed.data;
 
-  const workflow = await prisma.$transaction(async (tx) => {
-    if (data.isDefault) {
-      await tx.workflow.updateMany({ where: { isDefault: true, id: { not: id } }, data: { isDefault: false } });
-    }
-    if (data.statuses) {
-      await tx.workflowStatus.deleteMany({ where: { workflowId: id } });
-    }
-    return tx.workflow.update({
-      where: { id },
-      data: {
-        ...(data.name !== undefined ? { name: data.name } : {}),
-        ...(data.description !== undefined ? { description: data.description || null } : {}),
-        ...(data.isDefault !== undefined ? { isDefault: data.isDefault } : {}),
-        ...(data.statuses
-          ? {
-              statuses: {
-                create: data.statuses.map((s, i) => ({
-                  key: s.key,
-                  label: s.label,
-                  color: s.color,
-                  order: i,
-                  isTerminal: s.isTerminal,
-                  isDelayFlag: s.isDelayFlag,
-                })),
-              },
-            }
-          : {}),
-      },
-      include: { statuses: { orderBy: { order: "asc" } } },
+  let workflow;
+  try {
+    workflow = await prisma.$transaction(async (tx) => {
+      if (data.isDefault) {
+        await tx.workflow.updateMany({ where: { isDefault: true, id: { not: id } }, data: { isDefault: false } });
+      }
+      if (data.statuses) {
+        await tx.workflowStatus.deleteMany({ where: { workflowId: id } });
+      }
+      return tx.workflow.update({
+        where: { id },
+        data: {
+          ...(data.name !== undefined ? { name: data.name } : {}),
+          ...(data.description !== undefined ? { description: data.description || null } : {}),
+          ...(data.isDefault !== undefined ? { isDefault: data.isDefault } : {}),
+          ...(data.statuses
+            ? {
+                statuses: {
+                  create: data.statuses.map((s, i) => ({
+                    key: s.key,
+                    label: s.label,
+                    color: s.color,
+                    order: i,
+                    isTerminal: s.isTerminal,
+                    isDelayFlag: s.isDelayFlag,
+                  })),
+                },
+              }
+            : {}),
+        },
+        include: { statuses: { orderBy: { order: "asc" } } },
+      });
     });
-  });
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "code" in err && err.code === "P2002") {
+      return NextResponse.json({ error: "Two statuses can't share the same key." }, { status: 409 });
+    }
+    return NextResponse.json({ error: "Could not save workflow" }, { status: 500 });
+  }
 
   return NextResponse.json({ workflow });
 }

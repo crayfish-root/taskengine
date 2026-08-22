@@ -1,15 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { SegmentedControl } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
+import { DropdownMenu, MenuItem } from "@/components/ui/dropdown-menu";
 import { UPDATE_FREQUENCY } from "@/lib/status";
 import { relativeTime, formatDate } from "@/lib/utils";
 import { RespondButton } from "./respond-modal";
-import { CalendarClock, AlertCircle } from "lucide-react";
+import { CalendarClock, AlertCircle, MoreHorizontal, Pause, Play, Trash2 } from "lucide-react";
 
 interface Person {
   id: string;
@@ -83,9 +86,49 @@ function RequestCard({
   personLabel: "from" | "to";
   respondable?: boolean;
 }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
   const overdue = r.active && new Date(r.nextDueAt) < new Date();
   const lastResponse = r.responses[0];
   const target = r.task ? r.task.title : r.project ? `${r.project.code} · ${r.project.name}` : null;
+  const manageable = personLabel === "to"; // requests the current user made — only the requester can edit/delete
+
+  async function togglePause() {
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/updates/${r.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active: !r.active }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Could not update request");
+      }
+      router.refresh();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Could not update request");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (!window.confirm(`Delete "${r.title}"? This can't be undone.`)) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/updates/${r.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Could not delete request");
+      }
+      router.refresh();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Could not delete request");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <Card className="p-4">
@@ -123,7 +166,31 @@ function RequestCard({
             {r.active ? `Due ${formatDate(r.nextDueAt)}` : "Inactive"}
           </p>
           {lastResponse && <p className="text-[11px] text-muted-2">{relativeTime(lastResponse.createdAt)}</p>}
-          {respondable && r.active && <RespondButton requestId={r.id} question={r.question} />}
+          <div className="flex items-center gap-1.5">
+            {respondable && r.active && <RespondButton requestId={r.id} question={r.question} />}
+            {manageable && (
+              <DropdownMenu trigger={<Button variant="ghost" size="icon" disabled={busy}><MoreHorizontal className="h-4 w-4" /></Button>} align="end">
+                {(close) => (
+                  <>
+                    <MenuItem onClick={() => { close(); togglePause(); }}>
+                      {r.active ? (
+                        <>
+                          <Pause className="h-3.5 w-3.5" /> Pause
+                        </>
+                      ) : (
+                        <>
+                          <Play className="h-3.5 w-3.5" /> Resume
+                        </>
+                      )}
+                    </MenuItem>
+                    <MenuItem danger onClick={() => { close(); remove(); }}>
+                      <Trash2 className="h-3.5 w-3.5" /> Delete
+                    </MenuItem>
+                  </>
+                )}
+              </DropdownMenu>
+            )}
+          </div>
         </div>
       </div>
     </Card>

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, hashPassword } from "@/lib/auth";
+import { ELEVATED_LEVELS } from "@/lib/org";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -63,6 +64,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+  if (!ELEVATED_LEVELS.has(user.level)) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
 
   const body = await req.json().catch(() => null);
   const parsed = createSchema.safeParse(body);

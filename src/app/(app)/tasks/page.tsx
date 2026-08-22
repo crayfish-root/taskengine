@@ -34,21 +34,23 @@ export default async function TasksPage({
 
   const view = VIEWS.some((v) => v.value === sp.view) ? sp.view! : "my";
 
-  const where: Record<string, unknown> = {};
-  if (sp.status) where.status = sp.status;
-  if (sp.priority) where.priority = sp.priority;
-  if (sp.project) where.projectId = sp.project;
-  if (sp.assignee) where.assignments = { some: { userId: sp.assignee } };
+  const conditions: Record<string, unknown>[] = [];
+  if (sp.status) conditions.push({ status: sp.status });
+  if (sp.priority) conditions.push({ priority: sp.priority });
+  if (sp.project) conditions.push({ projectId: sp.project });
+  if (sp.assignee) conditions.push({ assignments: { some: { userId: sp.assignee } } });
 
   if (view === "my") {
-    where.assignments = { some: { userId: user.id } };
+    conditions.push({ assignments: { some: { userId: user.id } } });
   } else if (view === "delegated") {
-    where.delegatedById = user.id;
+    conditions.push({ delegatedById: user.id });
   } else if (view === "team") {
     const reportIds = await getAllReportIds(user.id);
-    where.assignments = { some: { userId: { in: reportIds.length ? reportIds : ["__none__"] } } };
+    conditions.push({ assignments: { some: { userId: { in: reportIds.length ? reportIds : ["__none__"] } } } });
   }
   // "all" — no extra scoping
+
+  const where: Record<string, unknown> = conditions.length ? { AND: conditions } : {};
 
   const [tasks, projects, people] = await Promise.all([
     prisma.task.findMany({

@@ -43,29 +43,37 @@ export async function POST(req: NextRequest) {
   }
   const data = parsed.data;
 
-  const workflow = await prisma.$transaction(async (tx) => {
-    if (data.isDefault) {
-      await tx.workflow.updateMany({ where: { isDefault: true }, data: { isDefault: false } });
-    }
-    return tx.workflow.create({
-      data: {
-        name: data.name,
-        description: data.description || null,
-        isDefault: data.isDefault,
-        statuses: {
-          create: data.statuses.map((s, i) => ({
-            key: s.key,
-            label: s.label,
-            color: s.color,
-            order: i,
-            isTerminal: s.isTerminal,
-            isDelayFlag: s.isDelayFlag,
-          })),
+  let workflow;
+  try {
+    workflow = await prisma.$transaction(async (tx) => {
+      if (data.isDefault) {
+        await tx.workflow.updateMany({ where: { isDefault: true }, data: { isDefault: false } });
+      }
+      return tx.workflow.create({
+        data: {
+          name: data.name,
+          description: data.description || null,
+          isDefault: data.isDefault,
+          statuses: {
+            create: data.statuses.map((s, i) => ({
+              key: s.key,
+              label: s.label,
+              color: s.color,
+              order: i,
+              isTerminal: s.isTerminal,
+              isDelayFlag: s.isDelayFlag,
+            })),
+          },
         },
-      },
-      include: { statuses: { orderBy: { order: "asc" } } },
+        include: { statuses: { orderBy: { order: "asc" } } },
+      });
     });
-  });
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "code" in err && err.code === "P2002") {
+      return NextResponse.json({ error: "Two statuses can't share the same key." }, { status: 409 });
+    }
+    return NextResponse.json({ error: "Could not create workflow" }, { status: 500 });
+  }
 
   return NextResponse.json({ workflow }, { status: 201 });
 }

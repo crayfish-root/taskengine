@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, LayoutDashboard } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
+import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -52,19 +53,26 @@ export default async function TeamDetailPage({ params }: { params: Promise<{ id:
         title={team.name}
         description={team.description ?? undefined}
         actions={
-          <EditTeamModalButton
-            team={{
-              id: team.id,
-              name: team.name,
-              description: team.description,
-              color: team.color,
-              departmentId: team.departmentId,
-              leadId: team.leadId,
-              memberIds: team.members.map((m) => m.user.id),
-            }}
-            departments={departments}
-            users={users}
-          />
+          <div className="flex items-center gap-2">
+            <Link href={`/dashboard/team/${team.id}`}>
+              <Button variant="secondary" size="sm">
+                <LayoutDashboard className="h-3.5 w-3.5" /> View dashboard
+              </Button>
+            </Link>
+            <EditTeamModalButton
+              team={{
+                id: team.id,
+                name: team.name,
+                description: team.description,
+                color: team.color,
+                departmentId: team.departmentId,
+                leadId: team.leadId,
+                memberIds: team.members.map((m) => m.user.id),
+              }}
+              departments={departments}
+              users={users}
+            />
+          </div>
         }
       />
 

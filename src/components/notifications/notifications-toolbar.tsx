@@ -32,14 +32,15 @@ export function TypeFilterSelect({ current }: { current: string }) {
   );
 }
 
-export function MarkAllReadButton({ hasUnread }: { hasUnread: boolean }) {
+export function MarkAllReadButton({ hasUnread, type }: { hasUnread: boolean; type?: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
   async function handleClick() {
     setLoading(true);
     try {
-      await fetch("/api/notifications/mark-all-read", { method: "POST" });
+      const qs = type ? `?type=${encodeURIComponent(type)}` : "";
+      await fetch(`/api/notifications/mark-all-read${qs}`, { method: "POST" });
       router.refresh();
     } finally {
       setLoading(false);
@@ -49,7 +50,7 @@ export function MarkAllReadButton({ hasUnread }: { hasUnread: boolean }) {
   return (
     <Button variant="secondary" size="sm" onClick={handleClick} disabled={!hasUnread || loading}>
       <CheckCheck className="h-3.5 w-3.5" />
-      Mark all read
+      {type ? "Mark filtered as read" : "Mark all read"}
     </Button>
   );
 }

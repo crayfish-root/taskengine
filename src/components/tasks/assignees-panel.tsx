@@ -38,9 +38,18 @@ export function AssigneesPanel({
 
   async function remove(assignmentId: string) {
     setRemovingId(assignmentId);
-    await fetch(`/api/tasks/${taskId}/assignments?assignmentId=${assignmentId}`, { method: "DELETE" });
-    setRemovingId(null);
-    router.refresh();
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/assignments?assignmentId=${assignmentId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Could not remove assignee");
+      }
+      router.refresh();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Could not remove assignee");
+    } finally {
+      setRemovingId(null);
+    }
   }
 
   return (

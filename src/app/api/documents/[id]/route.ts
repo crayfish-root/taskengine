@@ -1,9 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
 import { logActivity } from "@/lib/activity";
+import { ELEVATED_LEVELS } from "@/lib/org";
 import { NextRequest, NextResponse } from "next/server";
-
-const ELEVATED_LEVELS = new Set(["CIO", "DIRECTOR", "HEAD_OF_DEPARTMENT"]);
 
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();

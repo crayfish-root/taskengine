@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/ui/page-header";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +19,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PROJECT_STATUS, PRIORITY } from "@/lib/status";
 import { formatDate, cn } from "@/lib/utils";
 import { computeProgress, isProjectOverdue, LITE_USER_SELECT } from "@/lib/task-utils";
-import { ShieldAlert } from "lucide-react";
+import { ShieldAlert, LayoutDashboard } from "lucide-react";
 
 const TABS = [
   { key: "tasks", label: "Tasks" },
@@ -146,21 +148,28 @@ export default async function ProjectDetailPage({
         title={project.name}
         description={project.description ?? undefined}
         actions={
-          <EditProjectModal
-            project={{
-              id: project.id,
-              name: project.name,
-              description: project.description,
-              status: project.status,
-              priority: project.priority,
-              departmentId: project.departmentId,
-              ownerId: project.ownerId,
-              startDate: project.startDate ? project.startDate.toISOString() : null,
-              targetDate: project.targetDate ? project.targetDate.toISOString() : null,
-            }}
-            people={people}
-            departments={departments}
-          />
+          <div className="flex items-center gap-2">
+            <Link href={`/dashboard/project/${project.id}`}>
+              <Button variant="secondary" size="sm">
+                <LayoutDashboard className="h-3.5 w-3.5" /> View dashboard
+              </Button>
+            </Link>
+            <EditProjectModal
+              project={{
+                id: project.id,
+                name: project.name,
+                description: project.description,
+                status: project.status,
+                priority: project.priority,
+                departmentId: project.departmentId,
+                ownerId: project.ownerId,
+                startDate: project.startDate ? project.startDate.toISOString() : null,
+                targetDate: project.targetDate ? project.targetDate.toISOString() : null,
+              }}
+              people={people}
+              departments={departments}
+            />
+          </div>
         }
       />
 

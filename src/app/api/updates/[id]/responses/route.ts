@@ -16,6 +16,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const request = await prisma.scheduledUpdateRequest.findUnique({ where: { id } });
   if (!request) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (request.requestedOfId !== user.id) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
 
   const body = await req.json().catch(() => null);
   const parsed = createSchema.safeParse(body);

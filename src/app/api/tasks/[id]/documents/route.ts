@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { canActOnTask } from "@/lib/task-permissions";
 
-const MAX_SIZE = 8 * 1024 * 1024; // 8MB, base64 blob stored inline in sqlite
+const MAX_SIZE = 8 * 1024 * 1024; // 8MB, base64 blob stored inline in the database
 
 const bodySchema = z.object({
   name: z.string().trim().min(1).max(255),
@@ -22,6 +23,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const task = await prisma.task.findUnique({ where: { id }, select: { id: true } });
   if (!task) return NextResponse.json({ error: "Task not found" }, { status: 404 });
+
+  if (!(await canActOnTask(user.id, id))) {
+    return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
 
   const doc = await prisma.document.create({
     data: { taskId: id, uploadedById: user.id, ...parsed.data },

@@ -19,7 +19,12 @@ export function WorkflowActions({ workflow, projectCount }: { workflow: Workflow
       body: JSON.stringify({ isDefault: true }),
     });
     setBusy(false);
-    if (res.ok) router.refresh();
+    if (res.ok) {
+      router.refresh();
+    } else {
+      const body = await res.json().catch(() => ({}));
+      alert(body.error ?? "Could not set default workflow");
+    }
   }
 
   async function remove() {

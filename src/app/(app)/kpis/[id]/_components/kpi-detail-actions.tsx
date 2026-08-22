@@ -31,6 +31,8 @@ export function KpiDetailActions({
       router.refresh();
     } else {
       setDeleting(false);
+      const body = await res.json().catch(() => ({}));
+      window.alert(body.error ?? "Could not delete KPI");
     }
   }
 

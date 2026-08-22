@@ -46,38 +46,72 @@ export function ProjectTeamPanel({
   async function addMember() {
     if (!pickedUser) return;
     setBusy(true);
-    await fetch(`/api/projects/${projectId}/members`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: pickedUser }),
-    });
-    setBusy(false);
-    setPickedUser(null);
-    setMemberModal(false);
-    router.refresh();
+    try {
+      const res = await fetch(`/api/projects/${projectId}/members`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: pickedUser }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Could not add member");
+      }
+      setPickedUser(null);
+      setMemberModal(false);
+      router.refresh();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Could not add member");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function removeMember(userId: string) {
-    await fetch(`/api/projects/${projectId}/members?userId=${userId}`, { method: "DELETE" });
-    router.refresh();
+    try {
+      const res = await fetch(`/api/projects/${projectId}/members?userId=${userId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Could not remove member");
+      }
+      router.refresh();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Could not remove member");
+    }
   }
 
   async function addTeam() {
     if (!pickedTeam) return;
     setBusy(true);
-    await fetch(`/api/projects/${projectId}/teams`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ teamId: pickedTeam }),
-    });
-    setBusy(false);
-    setTeamModal(false);
-    router.refresh();
+    try {
+      const res = await fetch(`/api/projects/${projectId}/teams`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ teamId: pickedTeam }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Could not add team");
+      }
+      setTeamModal(false);
+      router.refresh();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Could not add team");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function removeTeam(teamId: string) {
-    await fetch(`/api/projects/${projectId}/teams?teamId=${teamId}`, { method: "DELETE" });
-    router.refresh();
+    try {
+      const res = await fetch(`/api/projects/${projectId}/teams?teamId=${teamId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Could not remove team");
+      }
+      router.refresh();
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Could not remove team");
+    }
   }
 
   const availableTeams = allTeams.filter((t) => !teams.some((pt) => pt.teamId === t.id));

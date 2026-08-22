@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth";
+import { canManageProject } from "@/lib/project-permissions";
 
 const patchSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
@@ -14,16 +15,6 @@ const patchSchema = z.object({
   targetDate: z.string().nullable().optional(),
   budget: z.number().nullable().optional(),
 });
-
-async function canManageProject(userId: string, projectId: string) {
-  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { ownerId: true } });
-  if (!project) return false;
-  if (project.ownerId === userId) return true;
-  const membership = await prisma.projectMember.findUnique({
-    where: { projectId_userId: { projectId, userId } },
-  });
-  return !!membership;
-}
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();

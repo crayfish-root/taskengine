@@ -118,13 +118,21 @@ jobs:
           check_err "application.deploy" "$(call POST application.deploy "$DEPLOY_JSON")"
 
           echo "== Waiting for deployment to finish =="
+          LATEST_DEPLOYMENT_ID=""
           for i in $(seq 1 60); do
             DEPLOYS=$(call GET "deployment.allByType?id=$APPLICATION_ID&type=application")
-            STATUS=$(echo "$DEPLOYS" | jq -r 'if type=="array" then . else (.deployments // .data // []) end | sort_by(.createdAt) | last | .status // empty')
+            LATEST=$(echo "$DEPLOYS" | jq -c 'if type=="array" then . else (.deployments // .data // []) end | sort_by(.createdAt) | last // {}')
+            STATUS=$(echo "$LATEST" | jq -r '.status // empty')
+            LATEST_DEPLOYMENT_ID=$(echo "$LATEST" | jq -r '.deploymentId // empty')
             echo "deployment status: ${STATUS:-<none yet>}"
             if [ "$STATUS" = "done" ]; then break; fi
             if [ "$STATUS" = "error" ] || [ "$STATUS" = "cancelled" ]; then
-              echo "Deployment failed with status: $STATUS"; exit 1
+              echo "Deployment failed with status: $STATUS"
+              if [ -n "$LATEST_DEPLOYMENT_ID" ]; then
+                echo "== Build log (deploymentId=$LATEST_DEPLOYMENT_ID) =="
+                call GET "deployment.readLogs?deploymentId=$LATEST_DEPLOYMENT_ID&tail=300" | jq -r 'if type=="string" then . else tostring end'
+              fi
+              exit 1
             fi
             sleep 10
           done

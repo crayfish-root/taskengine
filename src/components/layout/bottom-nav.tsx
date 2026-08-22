@@ -32,7 +32,10 @@ export function BottomNav({
 
   return (
     <>
-      <nav className="md:hidden fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-border bg-surface/90 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]">
+      <nav
+        data-testid="bottom-nav"
+        className="md:hidden fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-border bg-surface/90 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]"
+      >
         {TABS.map((tab) => {
           const active = tab.key === activeTab?.key;
           const Icon = tab.icon;

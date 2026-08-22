@@ -52,7 +52,7 @@ export function MoreSheet({
   }
 
   return createPortal(
-    <div className="md:hidden fixed inset-0 z-50 flex flex-col bg-surface animate-fade-in">
+    <div data-testid="more-sheet" className="md:hidden fixed inset-0 z-50 flex flex-col bg-surface animate-fade-in">
       <div className="flex items-center justify-between px-4 pt-[calc(env(safe-area-inset-top)+14px)] pb-2">
         <span className="text-[17px] font-semibold tracking-[-0.01em]">Menu</span>
         <button

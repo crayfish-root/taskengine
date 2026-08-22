@@ -121,33 +121,37 @@ jobs:
           await page.screenshot({ path: "mobile-dashboard.png", fullPage: true });
 
           console.log("== Checking bottom nav is visible ==");
-          const bottomNav = page.locator("nav.fixed.inset-x-0.bottom-0");
+          const bottomNav = page.locator('[data-testid="bottom-nav"]');
           const navVisible = await bottomNav.isVisible().catch(() => false);
           console.log("bottom nav visible:", navVisible);
           if (!navVisible) { console.log("FAIL: bottom nav not visible on mobile viewport"); process.exit(1); }
 
-          console.log("== Checking sidebar is hidden ==");
+          console.log("== Checking desktop sidebar is hidden ==");
           const sidebar = page.locator("aside").first();
-          const sidebarVisible = await sidebar.isVisible().catch(() => false);
-          console.log("desktop sidebar visible (should be false):", sidebarVisible);
+          const sidebarCount = await sidebar.count();
+          const sidebarVisible = sidebarCount > 0 ? await sidebar.isVisible().catch(() => false) : false;
+          console.log("desktop sidebar count/visible (should be present-but-hidden or absent):", sidebarCount, sidebarVisible);
           if (sidebarVisible) { console.log("FAIL: desktop sidebar showing on mobile viewport"); process.exit(1); }
 
           console.log("== Tapping Tasks tab ==");
-          await page.click('nav.fixed a:has-text("Tasks")');
+          await bottomNav.locator('a:has-text("Tasks")').click();
           await page.waitForURL(/\/tasks/, { timeout: 10000 });
           await page.waitForTimeout(400);
           await page.screenshot({ path: "mobile-tasks.png", fullPage: true });
 
           console.log("== Opening More sheet ==");
-          await page.click('nav.fixed button:has-text("More")');
+          await bottomNav.locator('button:has-text("More")').click();
           await page.waitForTimeout(400);
-          const sheetVisible = await page.locator('text=Menu').first().isVisible().catch(() => false);
+          const sheet = page.locator('[data-testid="more-sheet"]');
+          const sheetVisible = await sheet.isVisible().catch(() => false);
           console.log("more sheet visible:", sheetVisible);
           if (!sheetVisible) { console.log("FAIL: More sheet did not open"); process.exit(1); }
           await page.screenshot({ path: "mobile-more-sheet.png", fullPage: true });
 
           console.log("== Tapping a secondary nav item (Leave) from the sheet ==");
-          await page.click('a:has-text("Leave")');
+          const leaveLink = sheet.locator('a:has-text("Leave")');
+          console.log("Leave link count in sheet:", await leaveLink.count());
+          await leaveLink.click();
           await page.waitForURL(/\/leave/, { timeout: 10000 });
           await page.waitForTimeout(400);
           await page.screenshot({ path: "mobile-leave.png", fullPage: true });

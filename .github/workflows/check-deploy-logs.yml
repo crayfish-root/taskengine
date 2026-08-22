@@ -1,0 +1,43 @@
+name: Check latest app deployment logs
+
+on:
+  workflow_dispatch:
+    inputs:
+      dokploy_url:
+        description: "Dokploy dashboard base URL"
+        required: true
+      dokploy_token:
+        description: "Dokploy API token"
+        required: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mask token
+        uses: actions/github-script@v7
+        env:
+          DOKPLOY_TOKEN: ${{ inputs.dokploy_token }}
+        with:
+          script: core.setSecret(process.env.DOKPLOY_TOKEN)
+
+      - name: Print latest deployment log
+        env:
+          DOKPLOY_TOKEN: ${{ inputs.dokploy_token }}
+          DOKPLOY_URL_RAW: ${{ inputs.dokploy_url }}
+        run: |
+          set -euo pipefail
+          BASE="$DOKPLOY_URL_RAW"
+          if [[ "$BASE" != http://* && "$BASE" != https://* ]]; then BASE="https://$BASE"; fi
+          BASE="${BASE%/}"
+          API="$BASE/api"
+          call() { curl -sS -X "$1" "$API/$2" -H "x-api-key: $DOKPLOY_TOKEN"; }
+
+          ALL=$(call GET project.all)
+          PROJECT=$(echo "$ALL" | jq -c '[.[] | select(.name=="taskengine")] | sort_by(.createdAt) | last')
+          APPLICATION_ID=$(echo "$PROJECT" | jq -r '.environments[0].applications[0].applicationId')
+
+          DEPLOYS=$(call GET "deployment.allByType?id=$APPLICATION_ID&type=application")
+          LATEST_ID=$(echo "$DEPLOYS" | jq -r 'if type=="array" then . else (.deployments // .data // []) end | sort_by(.createdAt) | last | .deploymentId')
+          echo "latest deploymentId: $LATEST_ID"
+          curl -sS "$API/deployment.readLogs?deploymentId=$LATEST_ID&tail=2000" -H "x-api-key: $DOKPLOY_TOKEN" | jq -r 'if type=="string" then . else tostring end'

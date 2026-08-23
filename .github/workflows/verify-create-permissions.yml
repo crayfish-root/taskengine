@@ -1,0 +1,275 @@
+name: Redeploy and verify create-endpoint permissions
+
+# One-off: redeploys the taskengine Dokploy app (main now enforces role/ownership
+# checks on the workflows/projects/kpis/tasks create endpoints, and deliberately
+# keeps blockers/updates/documents open) and exercises the new permission model
+# end-to-end against the live app:
+#   1. A non-elevated STAFF user is blocked from creating a workflow; a CIO can
+#   2. STAFF can create a project/KPI owned by themselves, but not owned by someone else
+#   3. STAFF is blocked from adding a task to a project they don't manage; the
+#      project's owner (here, the elevated CIO) can
+#   4. STAFF can still raise a blocker, request an update from a non-report
+#      colleague, and upload a document against a project they don't manage —
+#      confirming those three routes were correctly left open
+on:
+  workflow_dispatch:
+    inputs:
+      dokploy_url:
+        description: "Dokploy dashboard base URL"
+        required: true
+      dokploy_token:
+        description: "Dokploy API token"
+        required: true
+      admin_email:
+        description: "CIO/elevated demo account email"
+        required: false
+        default: "cio@taskengine.io"
+      staff_email:
+        description: "Non-elevated STAFF demo account email"
+        required: false
+        default: "staff.eng1@taskengine.io"
+      demo_password:
+        description: "Demo account password"
+        required: false
+        default: "password123"
+
+jobs:
+  redeploy-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Mask tokens
+        uses: actions/github-script@v7
+        env:
+          DOKPLOY_TOKEN: ${{ inputs.dokploy_token }}
+          DEMO_PASSWORD: ${{ inputs.demo_password }}
+        with:
+          script: |
+            core.setSecret(process.env.DOKPLOY_TOKEN);
+            core.setSecret(process.env.DEMO_PASSWORD);
+
+      - name: Redeploy application
+        id: deploy
+        env:
+          DOKPLOY_TOKEN: ${{ inputs.dokploy_token }}
+          DOKPLOY_URL_RAW: ${{ inputs.dokploy_url }}
+        run: |
+          set -euo pipefail
+          BASE="$DOKPLOY_URL_RAW"
+          if [[ "$BASE" != http://* && "$BASE" != https://* ]]; then BASE="https://$BASE"; fi
+          BASE="${BASE%/}"
+          API="$BASE/api"
+          call() {
+            local method="$1" path="$2" body="${3:-}"
+            if [ -n "$body" ]; then
+              curl -sS -X "$method" "$API/$path" -H "x-api-key: $DOKPLOY_TOKEN" -H "Content-Type: application/json" -d "$body"
+            else
+              curl -sS -X "$method" "$API/$path" -H "x-api-key: $DOKPLOY_TOKEN"
+            fi
+          }
+          check_err() {
+            if echo "$2" | jq -e 'type == "object" and has("code")' >/dev/null 2>&1; then echo "$1 failed: $2"; exit 1; fi
+          }
+
+          ALL=$(call GET project.all)
+          PROJECT=$(echo "$ALL" | jq -c '[.[] | select(.name=="taskengine")] | sort_by(.createdAt) | last')
+          APPLICATION_ID=$(echo "$PROJECT" | jq -r '.environments[0].applications[0].applicationId')
+          echo "applicationId=$APPLICATION_ID"
+
+          check_err "application.deploy" "$(call POST application.deploy "$(jq -n --arg id "$APPLICATION_ID" '{applicationId:$id, title:"Verify create-endpoint permissions redeploy"}')")"
+
+          for i in $(seq 1 60); do
+            DEPLOYS=$(call GET "deployment.allByType?id=$APPLICATION_ID&type=application")
+            STATUS=$(echo "$DEPLOYS" | jq -r 'if type=="array" then . else (.deployments // .data // []) end | sort_by(.createdAt) | last | .status // empty')
+            echo "deployment status: ${STATUS:-<none yet>}"
+            if [ "$STATUS" = "done" ]; then break; fi
+            if [ "$STATUS" = "error" ] || [ "$STATUS" = "cancelled" ]; then
+              DID=$(echo "$DEPLOYS" | jq -r 'if type=="array" then . else (.deployments // .data // []) end | sort_by(.createdAt) | last | .deploymentId // empty')
+              echo "Deployment failed: $STATUS"
+              if [ -n "$DID" ]; then call GET "deployment.readLogs?deploymentId=$DID&tail=300" | jq -r 'if type=="string" then . else tostring end'; fi
+              exit 1
+            fi
+            sleep 10
+          done
+
+          DOMAINS=$(call GET "domain.byApplicationId?applicationId=$APPLICATION_ID")
+          HOST=$(echo "$DOMAINS" | jq -r '.[0].host // empty')
+          echo "host=$HOST" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Playwright
+        run: |
+          npm init -y >/dev/null 2>&1
+          npm install playwright@1.48 >/dev/null 2>&1
+          npx playwright install --with-deps chromium >/dev/null 2>&1
+
+      - name: Exercise create-endpoint permission model
+        env:
+          HOST: ${{ steps.deploy.outputs.host }}
+          ADMIN_EMAIL: ${{ inputs.admin_email }}
+          STAFF_EMAIL: ${{ inputs.staff_email }}
+          DEMO_PASSWORD: ${{ inputs.demo_password }}
+        run: |
+          cat > verify.mjs <<'EOF'
+          import { chromium } from "playwright";
+
+          const host = process.env.HOST;
+          const adminEmail = process.env.ADMIN_EMAIL;
+          const staffEmail = process.env.STAFF_EMAIL;
+          const demoPassword = process.env.DEMO_PASSWORD;
+          const base = `https://${host}`;
+          const stamp = Date.now();
+          let failures = 0;
+
+          function check(label, ok, extra) {
+            console.log(`${ok ? "OK  " : "FAIL"} ${label}${extra ? " -> " + JSON.stringify(extra) : ""}`);
+            if (!ok) failures++;
+          }
+
+          async function apiCall(page, method, path, body) {
+            return page.evaluate(async ({ method, path, body }) => {
+              const res = await fetch(path, {
+                method,
+                headers: { "Content-Type": "application/json" },
+                body: body ? JSON.stringify(body) : undefined,
+              });
+              let json = null;
+              try { json = await res.json(); } catch {}
+              return { status: res.status, body: json };
+            }, { method, path, body });
+          }
+
+          async function loginViaApi(page, email, password) {
+            await page.goto(`${base}/login`, { waitUntil: "networkidle" });
+            return apiCall(page, "POST", "/api/auth/login", { email, password });
+          }
+
+          const browser = await chromium.launch();
+
+          const adminCtx = await browser.newContext();
+          const adminPage = await adminCtx.newPage();
+          const adminLogin = await loginViaApi(adminPage, adminEmail, demoPassword);
+          check("Admin (CIO) login", adminLogin.status === 200, adminLogin);
+          const adminId = adminLogin.body?.userId;
+
+          const staffCtx = await browser.newContext();
+          const staffPage = await staffCtx.newPage();
+          const staffLogin = await loginViaApi(staffPage, staffEmail, demoPassword);
+          check("Staff login", staffLogin.status === 200, staffLogin);
+          const staffId = staffLogin.body?.userId;
+
+          // ---- 1. Workflows: elevated-only ----
+          const staffWorkflow = await apiCall(staffPage, "POST", "/api/workflows", {
+            name: `Verify Workflow ${stamp}`,
+            statuses: [{ key: "todo", label: "To do", color: "#888", isTerminal: false, isDelayFlag: false }],
+          });
+          check("Staff cannot create a workflow (403)", staffWorkflow.status === 403, staffWorkflow);
+
+          const adminWorkflow = await apiCall(adminPage, "POST", "/api/workflows", {
+            name: `Verify Workflow ${stamp}`,
+            statuses: [{ key: "todo", label: "To do", color: "#888", isTerminal: false, isDelayFlag: false }],
+          });
+          check("Admin (CIO) can create a workflow (201)", adminWorkflow.status === 201, adminWorkflow);
+          const workflowId = adminWorkflow.body?.workflow?.id;
+
+          // ---- 2. Projects: can only self-own unless elevated ----
+          const staffOwnProject = await apiCall(staffPage, "POST", "/api/projects", {
+            name: `Verify Staff Project ${stamp}`,
+            code: `VSP${stamp}`.slice(0, 20),
+            ownerId: staffId,
+          });
+          check("Staff can create a project owned by themselves (201)", staffOwnProject.status === 201, staffOwnProject);
+
+          const staffOtherProject = await apiCall(staffPage, "POST", "/api/projects", {
+            name: `Verify Staff Project Other Owner ${stamp}`,
+            code: `VSPO${stamp}`.slice(0, 20),
+            ownerId: adminId,
+          });
+          check("Staff cannot create a project owned by someone else (403)", staffOtherProject.status === 403, staffOtherProject);
+
+          const adminProject = await apiCall(adminPage, "POST", "/api/projects", {
+            name: `Verify Admin Project ${stamp}`,
+            code: `VAP${stamp}`.slice(0, 20),
+            ownerId: adminId,
+          });
+          check("Admin (CIO) can create a project owned by themselves (201)", adminProject.status === 201, adminProject);
+          const adminProjectId = adminProject.body?.project?.id;
+
+          // ---- 3. Tasks: only a project manager/owner (or elevated) can add tasks ----
+          const staffTaskOnUnmanagedProject = await apiCall(staffPage, "POST", "/api/tasks", {
+            title: `Verify unauthorized task ${stamp}`,
+            projectId: adminProjectId,
+          });
+          check(
+            "Staff cannot add a task to a project they don't manage (403)",
+            staffTaskOnUnmanagedProject.status === 403,
+            staffTaskOnUnmanagedProject
+          );
+
+          const adminTask = await apiCall(adminPage, "POST", "/api/tasks", {
+            title: `Verify authorized task ${stamp}`,
+            projectId: adminProjectId,
+          });
+          check("Admin (project owner) can add a task to their own project (201)", adminTask.status === 201, adminTask);
+          const adminTaskId = adminTask.body?.task?.id;
+
+          // ---- 4. KPIs: can only self-own unless elevated ----
+          const staffOwnKpi = await apiCall(staffPage, "POST", "/api/kpis", {
+            name: `Verify Staff KPI ${stamp}`,
+            target: 100,
+            ownerId: staffId,
+          });
+          check("Staff can create a KPI owned by themselves (201)", staffOwnKpi.status === 201, staffOwnKpi);
+          const staffKpiId = staffOwnKpi.body?.kpi?.id;
+
+          const staffOtherKpi = await apiCall(staffPage, "POST", "/api/kpis", {
+            name: `Verify Staff KPI Other Owner ${stamp}`,
+            target: 100,
+            ownerId: adminId,
+          });
+          check("Staff cannot create a KPI owned by someone else (403)", staffOtherKpi.status === 403, staffOtherKpi);
+
+          // ---- 5. Deliberately-open routes: blockers, updates, documents ----
+          const staffBlocker = await apiCall(staffPage, "POST", "/api/blockers", {
+            title: `Verify blocker on unmanaged project ${stamp}`,
+            projectId: adminProjectId,
+          });
+          check(
+            "Staff can still raise a blocker on a project they don't manage (201, deliberately open)",
+            staffBlocker.status === 201,
+            staffBlocker
+          );
+
+          const staffUpdateRequest = await apiCall(staffPage, "POST", "/api/updates", {
+            title: `Verify update request ${stamp}`,
+            requestedOfId: adminId,
+          });
+          check(
+            "Staff can still request an update from a non-report colleague (201, deliberately open)",
+            staffUpdateRequest.status === 201,
+            staffUpdateRequest
+          );
+
+          const tinyPngDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+          const staffDocument = await apiCall(staffPage, "POST", "/api/documents", {
+            name: `verify-doc-${stamp}.png`,
+            mimeType: "image/png",
+            size: 95,
+            dataUrl: tinyPngDataUrl,
+            projectId: adminProjectId,
+          });
+          check(
+            "Staff can still upload a document to a project they don't manage (201, deliberately open)",
+            staffDocument.status === 201,
+            staffDocument
+          );
+
+          // ---- Cleanup what we can (workflows/tasks/kpis have DELETE routes; projects don't) ----
+          if (adminTaskId) await apiCall(adminPage, "DELETE", `/api/tasks/${adminTaskId}`);
+          if (workflowId) await apiCall(adminPage, "DELETE", `/api/workflows/${workflowId}`);
+          if (staffKpiId) await apiCall(staffPage, "DELETE", `/api/kpis/${staffKpiId}`);
+
+          await browser.close();
+
+          console.log(`\n${failures === 0 ? "All checks passed." : `${failures} check(s) FAILED.`}`);
+          process.exit(failures === 0 ? 0 : 1);
+          EOF
+          node verify.mjs

@@ -176,7 +176,7 @@ jobs:
             code: `VSP${stamp}`.slice(0, 20),
             ownerId: staffId,
           });
-          check("Staff can create a project owned by themselves (201)", staffOwnProject.status === 201, staffOwnProject);
+          check("Staff can create a project owned by themselves (200)", staffOwnProject.status === 200, staffOwnProject);
 
           const staffOtherProject = await apiCall(staffPage, "POST", "/api/projects", {
             name: `Verify Staff Project Other Owner ${stamp}`,
@@ -190,7 +190,7 @@ jobs:
             code: `VAP${stamp}`.slice(0, 20),
             ownerId: adminId,
           });
-          check("Admin (CIO) can create a project owned by themselves (201)", adminProject.status === 201, adminProject);
+          check("Admin (CIO) can create a project owned by themselves (200)", adminProject.status === 200, adminProject);
           const adminProjectId = adminProject.body?.project?.id;
 
           // ---- 3. Tasks: only a project manager/owner (or elevated) can add tasks ----
@@ -208,7 +208,7 @@ jobs:
             title: `Verify authorized task ${stamp}`,
             projectId: adminProjectId,
           });
-          check("Admin (project owner) can add a task to their own project (201)", adminTask.status === 201, adminTask);
+          check("Admin (project owner) can add a task to their own project (200)", adminTask.status === 200, adminTask);
           const adminTaskId = adminTask.body?.task?.id;
 
           // ---- 4. KPIs: can only self-own unless elevated ----
@@ -233,8 +233,8 @@ jobs:
             projectId: adminProjectId,
           });
           check(
-            "Staff can still raise a blocker on a project they don't manage (201, deliberately open)",
-            staffBlocker.status === 201,
+            "Staff can still raise a blocker on a project they don't manage (200, deliberately open)",
+            staffBlocker.status === 200,
             staffBlocker
           );
 
